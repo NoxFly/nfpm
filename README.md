@@ -1,87 +1,59 @@
-# Shell script for C/C++ projects
+# Noxfly Project Manager
 
-1. Download the script or the repo in a new project folder.
-1. do `chmod 755 run.sh` to let you execute it if you don't have the permissions for.
-1. do `./run.sh -g` to generate the project's structure. By default it's for `cpp`. See `./run.sh -l` command.
-1. do `./run.sh` to compile the code and execute it.
+A free, lightweight and open-source project manager for linux C/C++ projects.
 
-Run `./run.sh --patch` to download latest online version of the script.
+Always struggled to manage a project where every members of the team are in different OS, and with libraries at different paths ?
 
-## Script usage
+This scripts helps you improve your time by :
+- Managing packages, config, compilation and run
+- for cross-env development
+- whether for a personal or team project
+with a lightweight configuration and use.
+
+## Prerequisites
+
+For now, the use of this script only works in a Unix like environment.
+However, once you generated the base of the project with the script, it will also create a CMake configuration, that'll can be used across OS and configurations.
+
+You'll need to have these packages preinstalled :
+- cmake
+- make
+- wget
+- rsync
+- a compiler and/or a debugger, depending your needs: gcc, g++, gdb
+
+### Future improvements :
+
+It currently only uses `dpkg`, `awk` and `apt-get` for some commands.
+This is available by default on a Debian-based distro, but not for every distros.
+I'll make sure to make this compatible to other distros soon.
+
+## Installation and use
+
+Make this command to download the script and make it globally available on your computer.
+
 ```sh
-$ ./run.sh -h # shows every possible usages (help command)
+sudo wget --https-only -O /usr/local/bin/nf https://raw.githubusercontent.com/NoxFly/nfpm/refs/heads/main/nf.sh
+sudo chmod 755 /usr/local/bin/nf # allow to read/write/execute properly depending the user
+# then you can do anywhere :
+nf --help
 ```
 
-The script applies the right executable's extension depending on which OS you are :
-* none for Linux
-* `.exe` for Windows
-* `.app` for MacOS
+## Basic commands
 
-## Structure
-
-### Project's mode 0 
 ```sh
-| bin/ # executable folder
-    | release/ # folder where there's the release executable version
-    | debug/ # folder where there's the debug executable version
-| build/ # follows the sub-folders structure you made in your src/ folder.
-    | # all object files (.o) are stored here
-| include/
-    | # every header files are stored here (.h/.hpp/.inl)
-| src/
-    | # every source files are stored here (.c, .cpp)
-    | main.cpp
-.gitignore
-License
-Makefile
-README.md
-run.sh
+# new project
+nf init
+
+# build
+nf build
+
+# [build] + run
+nf run
 ```
 
-### Project's mode 1
-```sh
-| bin/ # executable folder
-    | release/ # folder where there's the release executable version
-    | debug/ # folder where there's the debug executable version
-| build/ # follows the sub-folders structure you made in your src/ folder.
-    | # all object files (.o) are stored here
-| src/
-    | # every source and header files are stored here (.c, .cpp, .h, .hpp, .inl)
-    | Engine/
-        | Engine.cpp
-        | Engine.h
-    | main.cpp
-.gitignore
-License
-Makefile
-README.md
-run.sh
-```
+Add the `-v` flag to put some commands in verbose mode.
 
-The makefile will compile every source it will find on the `src/` folder.
-It is also adding every sub-folders of `include/` (or `src/` if prject's mode = 1) folder so when you're doing an include, you just have to write the filename (with .h at the end) without its path.
+## Advanced commands
 
-Example :
-```cpp
-#include "../../utils/something.hpp" // useless !
-```
-Use this instead :
-```cpp
-#include "something.hpp"
-```
-
-So you don't have to be worried about the Makefile, just code and `./run.sh` !
-
-Tip : you can add `./run.sh` as an alias or symlink so you just have to write `run` instead.
-
-
-## Script for libraries
-
-You can use the script to build static and/or shared libraries :
-
-`./run.sh --static` or `./run.sh --shared`.
-
-This will create the object files in the build folder, then create the `.a`, `.so` or `.dll` (on Windows) in the `bin/lib/` folder.<br>
-Plus, it will copy/paste all the header files you have (`.h`, `.hpp` and `.inl`) in `bin/lib/include/{Project_Name}/`, reorganizing these as follow :
-- All files header files that are alone in their folder will be up to their parent, recusivly. This avoids a ton of subfolders just for a file.
-- All `#include "my_project_file"` pathes will be transformed so it will search with a relative path. You can then use it everywhere without worrying about the configuration.
+This section will be filled soon.
