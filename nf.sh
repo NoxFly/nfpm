@@ -2,13 +2,17 @@
 
 # Author : NoxFly
 # Copyrights 2021-2024
-
+#
+#   \ |  __| _ \  \  |
+#  .  |  _|  __/ |\/ |
+# _|\_| _|  _|  _|  _|
+#
 # No modification allowed without author's consent
 # If you want to contribute, have a question or a fix,
 # please create a Pull Request on the Github Repository
 # at https://raw.githubusercontent.com/NoxFly/nfpm/
 
-# ------------------ Helper ------------------
+# ------------------ Helpers ------------------
 
 date_now() {
     echo $(date +%s%3N)
@@ -24,26 +28,24 @@ get_formatted_duration() {
 }
 
 log() {
-    if [ $VERBOSE -eq 1 -a $# -gt 0 ]; then
-        echo -e "$@"
-    fi
+    [ $VERBOSE -eq 1 ] && echo -e "$@"
+}
+
+log_error() {
+    echo -e "${CLR_RED}$@${CLR_CLEAR}"
+}
+
+log_success() {
+    echo -e "${CLR_GREEN}$@${CLR_CLEAR}"
 }
 
 capitalize() {
-    if [ -z "$1" ]; then
-        echo
-    fi
-
     echo "$1" | sed -r 's/(^| )([a-z])/\U\2/g' | tr -d ' '
 }
 
 load_config() {
-    if [ ! -z "$CONFIG_LOADED" ]; then
-        return
-    fi
-
+    [ ! -z "$CONFIG_LOADED" ] && return
     CONFIG_LOADED="1"
-
     ensure_inside_project
 
     P_NAME=$(internal_get_category_field_value "project" "name")
@@ -66,11 +68,7 @@ load_config() {
     ensure_config_integrity
 
     local ext_suffix=""
-
-    if [ "$P_LANG" == "cpp" ]; then
-        ext_suffix="pp"
-    fi
-
+    [ "${config["P_LANG"]}" == "cpp" ] && ext_suffix="pp"
     P_SRC_EXT="c$ext_suffix"
     P_HDR_EXT="h$ext_suffix"
 }
@@ -78,43 +76,42 @@ load_config() {
 ensure_config_integrity() {
     # structure mode
     if [[ ! $P_MODE =~ ^(0|1)$ ]]; then
-        echo "Invalid project mode. Supported modes are 0 and 1."
+        log_error "Invalid project mode. Supported modes are 0 and 1."
         exit 1
     fi
 
     # language
     if [[ ! $P_LANG =~ ^(c|cpp)$ ]]; then
-        echo "Invalid project type. Supported types are c and cpp."
+        log_error "Invalid project type. Supported types are c and cpp."
         exit 1
     fi
 
     # check language version
     if [ "$P_LANG" == "c" ]; then
         if [[ ! "$P_LANG_VERSION" =~ ^(89|99|11|17|23)$ ]]; then
-            echo "Invalid C version. Supported versions are 89, 99, 11, 17, 23."
+            log_error "Invalid C version. Supported versions are 89, 99, 11, 17, 23."
             exit 1
         fi
     else
         if [[ ! "$P_LANG_VERSION" =~ ^(03|11|14|17|20|23)$ ]]; then
-            echo "Invalid C++ version. Supported versions are 03, 11, 14, 17, 20, 23."
+            log_error "Invalid C++ version. Supported versions are 03, 11, 14, 17, 20, 23."
             exit 1
         fi
     fi
 
     # guard
     if [[ ! "$P_GUARD" =~ ^(ifndef|pragma)$ ]]; then
-        echo "Invalid guard. Supported guards are ifndef and pragma."
+        log_error "Invalid guard. Supported guards are ifndef and pragma."
         exit 1
     fi
 }
 
 ensure_inside_project() {
-    if [ ! -z "$INSIDE_PROJECT" ]; then
-        return
-    fi
+    [ ! -z "$INSIDE_PROJECT" ] && return
 
     if [ ! -f "$CONFIG_FILE" ]; then
-        echo -e "Error: No configuration file found in the current directory.\nCreate a new project thanks the '$COMMAND_NAME init' command."
+        log_error "Error: No configuration file found in the current directory."
+        echo "Create a new project thanks the '$COMMAND_NAME init' command."
         exit 1
     fi
 
@@ -127,7 +124,8 @@ ensure_project_structure() {
     load_config
 
     if [ ! -d "$P_SRC_DIR" ] || [ $P_MODE -eq 0 -a ! -d "$P_INC_DIR" ]; then
-        echo -e "There's no project's structure.\nTo create it, write '$COMMAND_NAME generate'"
+        log_error "There's no project's structure."
+        echo "To create it, write '$COMMAND_NAME generate'"
         exit 1
     fi
 }
@@ -139,8 +137,8 @@ ensure_project_structure() {
 
 cmd_init_project() {
     if [ -f "$CONFIG_FILE" ]; then
-        echo "A project is already initialized in this directory."
-        exit 0;
+        log_error "A project is already initialized in this directory."
+        exit 1;
     fi
 
     local project_lang
@@ -165,15 +163,13 @@ cmd_init_project() {
         echo -e "      Thus, you won't be asked for the language anymore if you don't specify one.\n"
     fi
 
-
     # if no c or cpp, exit
     if [[ ! "$project_lang" =~ ^(c|cpp)$ ]]; then
-        echo "Invalid language. Please choose c or cpp. Just hit Enter if it's cpp (default)."
+        log_error "Invalid language. Please choose c or cpp. Just hit Enter if it's cpp (default)."
         exit 1
     fi
 
-    local lang_version
-    [[  "$project_lang" == "c" ]] && lang_version=17 || lang_version=20
+    local lang_version=$([[  "$project_lang" == "c" ]] && echo 17 || echo 20)
 
     # create file first
     touch $CONFIG_FILE
@@ -211,18 +207,14 @@ internal_create_config_category() {
     fi
 }
 
-internal_set_category_field_value() {
-    local category_name=$1
-    local field_name=$2
-    local field_value=$3
-
-    if grep -q "^$category_name:" $CONFIG_FILE; then
-        if grep -q "^  $field_name:" $CONFIG_FILE; then
-            # Use a different delimiter (|) to avoid conflicts with special characters in field_value
-            sed -i "s|^  $field_name:.*|  $field_name: $field_value|" $CONFIG_FILE
+internal_set_category_field_value() { # $1=category, $2=field, $3=value
+    if grep -q "^$1:" $CONFIG_FILE; then
+        if grep -q "^  $2:" $CONFIG_FILE; then
+            # Use a different delimiter (|) to avoid conflicts with special characters in 3
+            sed -i "s|^  $2:.*|  $2: $3|" $CONFIG_FILE
         else
             # Append the new field to the end of the existing category
-            awk -v cat="$category_name" -v field="$field_name" -v value="$field_value" '
+            awk -v cat="$1" -v field="$2" -v value="$3" '
             BEGIN { in_category = 0 }
             /^[[:space:]]*#/ { next }
             {
@@ -243,7 +235,7 @@ internal_set_category_field_value() {
         fi
     else
         # Create the category and add the field
-        awk -v cat="$category_name" -v field="$field_name" -v value="$field_value" '
+        awk -v cat="$1" -v field="$2" -v value="$3" '
         BEGIN { category_added = 0 }
         /^[[:space:]]*#/ { next }
         {
@@ -266,11 +258,8 @@ internal_set_category_field_value() {
     fi
 }
 
-internal_get_category_field_value() {
-    local category_name=$1
-    local field_name=$2
-
-    awk -v cat="$category_name" -v field="$field_name" '
+internal_get_category_field_value() { # $1=category, $2=field
+    awk -v cat="$1" -v field="$2" '
     BEGIN { in_category = 0 }
     /^[[:space:]]*#/ { next }
     {
@@ -292,38 +281,29 @@ internal_get_category_field_value() {
 
 # ------------------ FOLDERS / FILES MANAGEMENT ------------------
 
-cmd_generate() {
-    local type=$1
-    local path_and_name=$2
-
-    if [ -z "$type" ]; then
+cmd_generate() { # $1=type, $2=name
+    if [ -z "$1" ]; then
         cmd_create_base_project
         exit 0
     fi
 
-    case "$type" in
-        "class"|"c")
-            cmd_create_class $path_and_name
-            ;;
-        *)
-            echo "Invalid type. Supported types are project and class."
-            exit 1
-            ;;
+    case "$1" in
+        "class"|"c") cmd_create_class $2;;
+        *) log_error "Invalid type. Supported types are project and class."; exit 1;;
     esac
 }
 
 cmd_create_base_project() {
     echo "Creating structure..."
-    
+
     local i=0
 
     create_dir() {
-        local dir="$1"
-        if [ ! -d "$dir" ]; then
-            mkdir "$dir"
-            [ $? -eq 0 ] && log "Created $dir folder"
-            ((i=i+1))
-        fi
+        [ ! -d "$1" ] && mkdir "$1" && ((i=i+1)) && log "Created $1 folder"
+    }
+
+    create_file() {
+        [ ! -f "$1" ] && echo -e "$2" > "$1" && ((i=i+1)) && log "Created $1 file"
     }
 
     create_dir "$P_SRC_DIR"
@@ -332,44 +312,23 @@ cmd_create_base_project() {
     create_dir "$P_BUILD_DIR"
     create_dir "$P_LIB_DIR"
 
-    local main_file="$P_SRC_DIR/main.$P_SRC_EXT"
-    local cmake_file="CMakeLists.txt"
-    local gitignore_file=".gitignore"
-    
-    if [ ! -f "$main_file" ]; then
-        touch "$main_file"
-        internal_get_main_code > "$main_file"
-        [ $? -eq 0 ] && log "Created main file"
-        ((i=i+1))
-    fi
+    create_file "$P_SRC_DIR/main.$P_SRC_EXT" "$(internal_get_main_code)"
+    create_file "CMakeLists.txt" "$(internal_cmake_content)"
+    create_file ".gitignore" "$(internal_get_gitignore_content)"
 
-    if [ ! -f "$cmake_file" ]; then
-        echo -e "$(internal_cmake_content)" > "CMakeLists.txt"
-        internal_update_cmake_config
-        [ $? -eq 0 ] && log "Created $cmake_file"
-        ((i=i+1))
-    fi
+    internal_update_cmake_config
 
-    if [ ! -f "$gitignore_file" ]; then
-        internal_create_gitignore
-        [ $? -eq 0 ] && log "Created $gitignore_file"
-        ((i=i+1))
-    fi
-
-    [ $i -eq 0 ] && log "No changes made" || echo "Done"
+    [ $i -eq 0 ] && log "No changes made" || log "Done"
 }
 
 cmd_create_class() {
     if [[ ! "$1" =~ ^([a-zA-Z0-9_\-]+/)*[a-zA-Z_][a-zA-Z0-9_]+$ ]]; then
-        echo "Error : class name must only contains alphanumeric characters and underscores"
+        log_error "Error : class name must only contains alphanumeric characters and underscores."
         exit 1
     fi
 
-    echo "Creating class $1..."
-    
     if [ ! -d "$P_SRC_DIR" ]; then
-        echo -e "Project's structure not created yet.\nAborting."
-        cmd_get_help
+        log_error "Project's structure not created yet.\nAborting."
         exit 2
     fi
 
@@ -378,99 +337,66 @@ cmd_create_class() {
     local srcPath
     local incPath
 
-    if [ "$className" == "$path" ]; then
-        path=''
-    else
-        path="$path/"
-    fi
+    path=$([[ "$className" == "$path" ]] && echo "" || echo "$path/")
 
     if [ $P_MODE -eq 0 ]; then
-        mkdir -p "$P_SRC_DIR/$path"
-        mkdir -p "$P_INC_DIR/$path"
-
+        mkdir -p "$P_SRC_DIR/$path" # ./src
+        mkdir -p "$P_INC_DIR/$path" # ./include
         srcPath="$P_SRC_DIR/$path$className.$P_SRC_EXT"
         incPath="$P_INC_DIR/$path$className.$P_HDR_EXT"
     else
         local folderPath="$P_SRC_DIR/$path$className"
-        mkdir -p $folderPath
-
+        mkdir -p $folderPath # ./src for both
         srcPath="$folderPath/$className.$P_SRC_EXT"
         incPath="$folderPath/$className.$P_HDR_EXT"
     fi
 
     if [ -f "$srcPath" ] || [ -f "$incPath" ]; then
-        echo "A file with this name already exists."
-        echo "Aborting"
+        Error "A file with this name already exists.\nAborting."
         exit 3
     fi
 
-    touch $srcPath
-    touch $incPath
     internal_get_src_code $className > $srcPath
     internal_get_header_code $className > $incPath
-    
+
     echo "Done"
 }
 
 internal_get_src_code() {
     internal_copyrights
-
-    if [ "$P_SRC_EXT" == "c" ]; then
-        echo -e -n "#include \"$1.$P_HDR_EXT\"\n\n"
-    else
-        echo -e -n "#include \"$1.$P_HDR_EXT\"\n\n$1::$1() {\n\n}\n\n$1::~$1() {\n\n}"
-    fi
+    [ "$P_SRC_EXT" == "c" ]\
+        && echo -e -n "#include \"$1.$P_HDR_EXT\"\n\n"\
+        || echo -e -n "#include \"$1.$P_HDR_EXT\"\n\n$1::$1() {\n\n}\n\n$1::~$1() {\n\n}"
 }
 
 internal_get_header_code() {
-    local guard_top
-    local guard_bottom
+    local guard_top="#pragma once\n\n"
+    local guard_bottom=""
     local pp=${P_HDR_EXT^^}
 
     if [ "$P_GUARD" == "ifndef" ]; then
         guard_top="#ifndef ${1^^}_$pp\n#define ${1^^}_$pp\n\n"
         guard_bottom="\n\n#endif // ${1^^}_$pp"
-    else
-        guard_top="#pragma once\n\n"
-        guard_bottom=""
     fi
 
     internal_copyrights
-
     echo -e -n "$guard_top"
-
-    if [ "$P_SRC_EXT" == "cpp" ]; then
-        echo -e -n "class $1 {\n\tpublic:\n\t\t$1();\n\t\t~$1();\n};"
-    fi
-
+    [ "$P_SRC_EXT" == "cpp" ] && echo -e -n "class $1 {\n\tpublic:\n\t\t$1();\n\t\t~$1();\n};"
     echo -e -n "$guard_bottom"
 }
 
 internal_get_main_code() {
     internal_copyrights
-
-    if [ "$P_SRC_EXT" == "cpp" ]; then
-        echo -e -n "#include <iostream>\n\nint main(int argc, char **argv) {\n\t(void)argc;\n\t(void)argv;\n\tstd::cout << \"Hello World\" << std::endl;\n\treturn EXIT_SUCCESS;\n}"
-    elif [ "$P_SRC_EXT" == "c" ]; then
-        echo -e -n "#include <stdio.h>\n\nint main(int argc, char **argv) {\n\t(void)argc;\n\t(void)argv;\n\tprintf(\"Hello World \");\n\treturn 0;\n}"
-    fi
+    [ "$P_SRC_EXT" == "cpp" ]\
+        && echo -e -n "#include <iostream>\n\nint main(int argc, char **argv) {\n\t(void)argc;\n\t(void)argv;\n\tstd::cout << \"Hello World\" << std::endl;\n\treturn EXIT_SUCCESS;\n}"\
+        || echo -e -n "#include <stdio.h>\n\nint main(int argc, char **argv) {\n\t(void)argc;\n\t(void)argv;\n\tprintf(\"Hello World \");\n\treturn 0;\n}"
 }
 
 internal_copyrights() {
-    if [ -z "$P_AUTHOR" ]; then
-        return
-    fi
-
-    year=$(date +%Y)
-    year_month_day=$(date +%Y-%m-%d)
-
-    echo -e -n "/**\n * @copyright (c) $year $P_AUTHOR\n"
-    echo -e -n " * @date $year_month_day"
-
-    if [ ! -z "$P_LICENSE" ]; then
-        echo -e -n "\n * @license $P_LICENSE"
-    fi
-
+    [ -z "$P_AUTHOR" ] && return
+    echo -e -n "/**\n * @copyright (c) $(date +%Y) $P_AUTHOR\n"
+    echo -e -n " * @date $(date +%Y-%m-%d)"
+    [ ! -z "$P_LICENSE" ] && echo -e -n "\n * @license $P_LICENSE"
     echo -e -n "\n */\n\n"
 }
 
@@ -488,54 +414,33 @@ cmd_install_all_packages() {
     local start_time=$(date_now)
 
     while IFS=: read -r dependency packages; do
-        if [[ "$dependency" == "dependencies" ]]; then
-            in_dependencies=1
-            continue
-        fi
-        if [[ $in_dependencies -eq 1 && "$dependency" =~ ^[[:space:]]*$ ]]; then
-            in_dependencies=0
-        fi
-        if [[ $in_dependencies -eq 1 ]]; then
-            for package in $packages; do
-                install_package $dependency $package
-                installStatus=$?
-
-                if [ $installStatus -eq 1 ]; then
-                    installed_success_count=$((installed_success_count+1))
-                elif [ $installStatus -eq -1 ]; then
-                    installed_failed_count=$((installed_failed_count+1))
-                fi
-            done
-        fi
+        [[ "$dependency" == "dependencies" ]] && { in_dependencies=1; continue; }
+        [[ $in_dependencies -eq 1 && "$dependency" =~ ^[[:space:]]*$ ]] && in_dependencies=0
+        [[ $in_dependencies -eq 1 ]] && for package in $packages; do
+            install_package $dependency $package
+            installStatus=$?
+            [ $installStatus -eq 1 ] && installed_success_count=$((installed_success_count+1))
+            [ $installStatus -eq -1 ] && installed_failed_count=$((installed_failed_count+1))
+        done
     done < "$CONFIG_FILE"
 
-    if [ $installed_failed_count -eq 0 ] && [ $installed_success_count -eq 0 ]; then
-        echo "Up to date."
-    fi
-
     local duration=$(get_formatted_duration $start_time)
-
+    [ $installed_failed_count -eq 0 ] && [ $installed_success_count -eq 0 ] && echo "Up to date."
     echo -e "\n$installed_success_count installed, $installed_failed_count failed in $duration."
 }
 
-cmd_install_package() {
-    local package_name=$1
-    local package=$2
+internal_install_package() { # $1=package to install
+    dpkg -s $1 &> $OUTPUT && return 0
+    
+    sudo apt-get install -y $1 &> $OUTPUT
 
-    if dpkg -s $package &> $OUTPUT; then
-        # echo "$package is already installed on the computer."
-        return 0
-    else
-        sudo apt-get install -y $package &> $OUTPUT
-
-        if [ $? -eq 0 ]; then
-            echo "$package has been installed on the computer."
-            return 1
-        else
-            echo "Failed to install $package."
-            return -1
-        fi
+    if [ $? -ne 0 ]; then
+        log_error "Failed to install $1."
+        return -1
     fi
+
+    echo "$1 has been installed on the computer."
+    return 1
 }
 
 internal_sort_dependencies() {
@@ -589,8 +494,8 @@ internal_sort_dependencies() {
     ' "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
 }
 
-cmd_add_package() {
-    local dependency_name=$1
+cmd_add_package() { # $1=dependency name, $2..=packages
+    $dep=$1
     shift
     local packages=("$@")
     local added_count=0
@@ -599,9 +504,9 @@ cmd_add_package() {
     local start_time=$(date_now)
 
     # Step 1: Check if the key already exists in the dependencies list
-    if grep -q "  $dependency_name:" $CONFIG_FILE; then
+    if grep -q "  $dep:" $CONFIG_FILE; then
         # Step 1.a: Look for already present values for this key
-        local existing_packages=$(grep "  $dependency_name:" $CONFIG_FILE | awk -F': ' '{print $2}')
+        local existing_packages=$(grep "  $dep:" $CONFIG_FILE | awk -F': ' '{print $2}')
         for package in $existing_packages; do
             for i in "${!packages[@]}"; do
                 if [ "${packages[i]}" == "$package" ]; then
@@ -627,21 +532,18 @@ cmd_add_package() {
 
     # Step 2: Install each dependency
     for package in "${packages[@]}"; do
-        if [ ! -z "$package" ]; then
-            cmd_install_package $dependency_name $package
-            local installStatus=$?
+        [ -z "$package" ] && continue
+    
+        internal_install_package $package
+        local r=$?
 
-            if [ $installStatus -eq 1 ]; then
-                installed_success_count=$((installed_success_count+1))
-            elif [ $installStatus -eq -1 ]; then
-                installed_failed_count=$((installed_failed_count+1))
-            fi
+        [ $r -eq 1 ] && installed_success_count=$((installed_success_count+1))
+        [ $r -eq -1 ] && installed_failed_count=$((installed_failed_count+1))
 
-            if [ $installStatus -ne -1 ]; then
-                new_packages+=($package)
-                added_count=$((added_count+1))
-                echo "$package added."
-            fi
+        if [ $r -ne -1 ]; then
+            new_packages+=($package)
+            added_count=$((added_count+1))
+            echo "$package added."
         fi
     done
 
@@ -659,35 +561,37 @@ cmd_add_package() {
 }
 
 cmd_uninstall_package() {
-    local quiet=$1
-    shift
     local package_count=0
     local dependency_count=$#
     local start_time=$(date_now)
 
     for package_name in "$@"; do
-        if grep -q "  $package_name:" $CONFIG_FILE; then
-            local packages=$(grep -A 1 "  $package_name:" $CONFIG_FILE | tail -n 1 | awk -F': ' '{print $2}')
-            for package in $packages; do
-                sudo apt-get remove -y $package &> $OUTPUT
+        package_line=$(grep -m 1 "  $package_name:" "$CONFIG_FILE")
+        
+        if [ -z "$package_line" ]; then
+            log_error "$package_name is not in the dependency list of this project."
+            continue
+        fi
+
+        packages=$(echo "$package_line" | awk -F': ' '{print $2}')
+        for package in $packages; do
+            if sudo apt-get remove -y $package &> $OUTPUT; then 
                 echo "$package has been uninstalled from the computer."
                 package_count=$((package_count+1))
-            done
-        else
-            echo "$package_name is not in the dependency list of this project."
-        fi
+            else
+                log_error "Failed to uninstall $package."
+            fi
+        done
     done
 
-    if [ $quiet -eq 0 ]; then
-        local duration=$(get_formatted_duration $start_time)
-        echo -e "\nUninstalled $package_count packages for $dependency_count dependencies in $duration."
-    fi
+    local duration=$(get_formatted_duration $start_time)
+    echo -e "\nUninstalled $package_count packages for $dependency_count dependencies in $duration."
 }
 
 cmd_remove_package() {
     for package_name in "$@"; do
         if ! grep -q "  $package_name:" $CONFIG_FILE; then
-            echo "$package_name is not in the dependency list of this project."
+            log_error "$package_name is not in the dependency list of this project."
             continue
         fi
 
@@ -696,9 +600,7 @@ cmd_remove_package() {
 
         local uninstall
         read -p "Do you also want to uninstall $package_name from the computer? (y/N): " uninstall
-        if [[ $uninstall =~ ^[Yy]$ ]]; then
-            cmd_uninstall_package 1 $package_name
-        fi
+        [[ $uninstall =~ ^[Yy]$ ]] && cmd_uninstall_package $package_name
     done
 }
 
@@ -766,39 +668,29 @@ cmd_list_packages() {
 
 # ------------------ Project versioning ------------------
 
-cmd_patch_version() {
-    local version=$1
+cmd_patch_version() { # $1=patch|minor|major
     local current_version=$(internal_get_category_field_value "project" "version")
 
-    if [[ "$current_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        IFS='.' read -r -a version_parts <<< "$current_version"
-        local major=${version_parts[0]}
-        local minor=${version_parts[1]}
-        local patch=${version_parts[2]}
-
-        case $version in
-            "major")
-                major=$((major+1))
-                minor=0
-                patch=0
-                ;;
-            "minor")
-                minor=$((minor+1))
-                patch=0
-                ;;
-            "patch")
-                patch=$((patch+1))
-                ;;
-        esac
-
-        local new_version="$major.$minor.$patch"
-        P_VERSION=$new_version
-        internal_set_category_field_value "project" "version" "$new_version"
-        internal_update_cmake_config
-        echo -e "Version updated to ${CLR_GREEN}$new_version.${CLR_RESET}"
-    else
-        echo "Invalid version format."
+    if [[ ! "$current_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        log_error "Invalid version format."
+        exit 1
     fi
+
+    IFS='.' read -r -a version_parts <<< "$current_version"
+    local major=${version_parts[0]}
+    local minor=${version_parts[1]}
+    local patch=${version_parts[2]}
+
+    case $1 in
+        "major") major=$((major+1)); minor=0; patch=0;;
+        "minor") minor=$((minor+1)); patch=0;;
+        "patch") patch=$((patch+1));;
+    esac
+
+    P_VERSION="$major.$minor.$patch"
+    internal_set_category_field_value "project" "version" "$P_VERSION"
+    internal_update_cmake_config
+    echo -e "Version updated to ${CLR_GREEN}$P_VERSION.${CLR_RESET}"
 }
 
 # -----------------------------------------------------------
@@ -816,37 +708,16 @@ cmd_change_project_configuration() {
     fi
 
     case $key in
-        "name")
-            internal_set_project_name $value
-            ;;
-        "description")
-            internal_set_project_description $value
-            ;;
-        "author")
-            internal_set_project_author $value
-            ;;
-        "url")
-            internal_set_project_url $value
-            ;;
-        "license")
-            internal_set_project_license $value
-            ;;
-        "cppVersion")
-            internal_set_cpp_version $value
-            ;;
-        "cVersion")
-            internal_set_c_version $value
-            ;;
-        "mode")
-            internal_set_project_mode $value
-            ;;
-        "guard")
-            internal_set_guard $value
-            ;;
-        *)
-            echo "Invalid key."
-            exit 1
-            ;;
+        "name") internal_set_project_name $value;;
+        "description") internal_set_project_description $value;;
+        "author") internal_set_project_author $value;;
+        "url") internal_set_project_url $value;;
+        "license") internal_set_project_license $value;;
+        "cppVersion") internal_set_cpp_version $value;;
+        "cVersion") internal_set_c_version $value;;
+        "mode") internal_set_project_mode $value;;
+        "guard") internal_set_guard $value;;
+        *) log_error "Invalid key."; exit 1;;
     esac
 }
 
@@ -886,87 +757,71 @@ internal_set_project_author() {
 
 internal_set_cpp_version() {
     if [ $P_LANG == "c" ]; then
-        echo "Project is a C project. Cannot set C++ version."
+        log_error "Project is a C project. Cannot set C++ version."
         exit 1
     fi
 
-    local version=$1
-
-    # ensure version is one of the supported versions :
-    # 03, 11, 14, 17, 20, 23
-    if [[ ! "$version" =~ ^(03|11|14|17|20|23)$ ]]; then
-        echo "Invalid C++ version. Supported versions are 03, 11, 14, 17, 20, 23."
+    if [[ ! "$1" =~ ^(03|11|14|17|20|23)$ ]]; then
+        log_error "Invalid C++ version. Supported versions are 03, 11, 14, 17, 20, 23."
         exit 1
     fi
 
-    P_LANG_VERSION=$version
-    internal_set_category_field_value "config" "cppVersion" $version
+    P_LANG_VERSION=$1
+    internal_set_category_field_value "config" "cppVersion" $1
     internal_update_cmake_config
-    echo "C++ version set to $version."
+    echo "C++ version set to $1."
 }
 
 internal_set_c_version() {
     if [ "$P_LANG" == "cpp" ]; then
-        echo "Project is a C++ project. Cannot set C version."
+        log_error "Project is a C++ project. Cannot set C version."
         exit 1
     fi
 
-    local version=$1
-
-    # ensure version is one of the supported versions :
-    # 89, 99, 11, 17, 23
-    if [[ ! "$version" =~ ^(89|99|11|17|23)$ ]]; then
-        echo "Invalid C version. Supported versions are 89, 99, 11, 17, 23."
+    if [[ ! "$1" =~ ^(89|99|11|17|23)$ ]]; then
+        log_error "Invalid C version. Supported versions are 89, 99, 11, 17, 23."
         exit 1
     fi
 
-    P_LANG_VERSION=$version
-    internal_set_category_field_value "config" "cVersion" $version
+    P_LANG_VERSION=$1
+    internal_set_category_field_value "config" "cVersion" $1
     internal_update_cmake_config
-    echo "C version set to $version."
+    echo "C version set to $1."
 }
 
-internal_set_project_mode() {
-    local mode=$1
-
+internal_set_project_mode() { # $1=mode
     ensure_project_structure
 
-    # ensure mode is one of the supported modes :
-    # 0, 1
-    if [[ ! $mode =~ ^(0|1)$ ]]; then
-        echo "Invalid project mode. Supported modes are 0 and 1."
+    if [[ ! $1 =~ ^(0|1)$ ]]; then
+        log_error "Invalid project mode. Supported modes are 0 and 1."
         exit 1
     fi
 
-    if [ $mode -eq $P_MODE ]; then
-        echo "Project mode is already set to $mode."
+    if [ $1 -eq $P_MODE ]; then
+        echo "Project mode is already set to $1."
         exit 0
     fi
 
-    internal_swap_structure $mode
-
-    if [ $? -ne 0 ]; then
-        echo "Failed to change the project mode."
+    if ! internal_swap_structure $1; then
+        log_error "Failed to change the project mode."
         exit 1
     fi
 
-    internal_set_category_field_value "config" "mode" $mode
+    P_MODE=$1
+    internal_set_category_field_value "config" "mode" $1
 
-    echo "Project mode set to $mode."
+    echo "Project mode set to $1."
 }
 
 internal_set_guard() {
-    local guard=$1
-
-    # ensure guard is one of the supported guards :
-    # ifndef, pragma
-    if [[ ! "$guard" =~ ^(ifndef|pragma)$ ]]; then
-        echo "Invalid guard. Supported guards are ifndef and pragma."
+    if [[ ! "$1" =~ ^(ifndef|pragma)$ ]]; then
+        log_error "Invalid guard. Supported guards are ifndef and pragma."
         exit 1
     fi
 
-    internal_set_category_field_value "config" "guard" "$guard"
-    echo "Guard set to $guard."
+    P_GUARD=$1
+    internal_set_category_field_value "config" "guard" "$1"
+    echo "Guard set to $1."
 }
 
 internal_update_cmake_config() {
@@ -975,10 +830,7 @@ internal_update_cmake_config() {
     local f="CMakeLists.txt"
     local pgname=$(capitalize "$P_NAME")
     local lang=${P_LANG^^}
-    
-    if [ "$lang" == "CPP" ]; then
-        lang="CXX"
-    fi
+    [ "$lang" == "CPP" ] && lang="CXX"
 
     local project_line="project($pgname VERSION $P_VERSION DESCRIPTION \"$P_DESC\" HOMEPAGE_URL \"$P_HOMEPAGE_URL\" LANGUAGES $lang)"
     sed -i "/^project(/c\\$project_line" "$f"
@@ -1135,10 +987,10 @@ internal_swap_structure() {
     fi
 
     if [ $r -ne 0 ]; then
-        echo -e "${CLR_RED}Failed to change the structure${CLR_RESET}"
+        log_error "Failed to change the structure"
         restore_backup
     else
-        echo -e "${CLR_GREEN}Successfully changed the structure${CLR_RESET}"
+        log_success "Successfully changed the structure"
     fi
 
     # Clean up backup
@@ -1150,12 +1002,13 @@ internal_swap_structure() {
 internal_update_library_include() {
 	log "${CLR_DGRAY}Updating shared include folder... "
 
-    local base_inc_path="$P_OUT_DIR/lib/include/$P_NAME/"
+    local pgname=$(capitalize "$P_NAME")
+    local base_inc_path="$P_OUT_DIR/lib/include/$pgname/"
     local file
 
     mkdir -p $base_inc_path
 
-    rsync -avq --delete --prune-empty-dirs --include="*/" --include="*.{c,cpp,inl}" --exclude="*" "$P_INC_DIR/" "$base_inc_path"
+    rsync -avq --delete --prune-empty-dirs --include="*/" --include="*.{c,cpp,inl}" --exclude="*" "include/" "$base_inc_path"
 
     # 1st scan :
     # update file position
@@ -1182,13 +1035,8 @@ internal_update_library_include() {
         cat "$file" | grep -Po '(?<=#include ")(.*\.(c|cpp|inl))(?=")' |
         while read -r dep; do
             local location=$(find "$base_inc_path" -type f -name "$(basename "$dep")")
-
-            if [[ $location == '' ]]; then
-                location='/'
-            fi
-
+            [[ $location == '' ]] && location='/'
             local relative=$(realpath --relative-to="$file" "$location")
-
             local search="#include \"$dep\""
             local replacement="#include \"${relative#'../'}\""
 
@@ -1199,7 +1047,7 @@ internal_update_library_include() {
     log "Done."
 }
 
-internal_create_gitignore() {
+internal_get_gitignore_content() {
     local ignore_list=(
         "# Ignore build files"
         "build/"
@@ -1212,7 +1060,7 @@ internal_create_gitignore() {
         "Makefile"
     );
 
-    printf "%s\n" "${ignore_list[@]}" > ".gitignore"
+    printf "%s\n" "${ignore_list[@]}"
 }
 
 internal_cmake_content() {
@@ -1221,19 +1069,12 @@ internal_cmake_content() {
 }
 
 cmd_compile() {
-    if [ -z "$PREPARED" ]; then
-        internal_prepare_build_run $@
-    fi
+    [ -z "$PREPARED" ] && internal_prepare_build_run $@
 
-    local lib=""
-
-    if [[ "$X_RULE" =~ ^(static|shared)$ ]]; then
-        lib="-D \"LIB=${X_MODE^^}\" \\n"
-    fi
-
+    local lib=$([[ "$X_RULE" =~ ^(static|shared)$ ]] && echo "-D \"LIB=${X_MODE^^}\" \\n" || echo "")
     local start_time=$(date_now)
 
-    CMAKE_CMD="cmake -S . -B $P_BUILD_DIR \
+    cmake -S . -B $P_BUILD_DIR \
         $lib
         -D \"${X_MODE^^}=1\" \
         -D \"PGNAME=$X_EXECUTABLE\" \
@@ -1246,19 +1087,17 @@ cmd_compile() {
         -D \"HDREXT=$P_HDR_EXT\" \
         -D \"OS=$X_OS\" \
         -D \"MACRO=$X_MACRO\" \
-        -D \"VERBOSE=$VERBOSE\""
-
-    eval $CMAKE_CMD &> $OUTPUT
+        -D \"VERBOSE=$VERBOSE\" &> $OUTPUT
 
     local cmake_result=$?
     local cmake_duration=$(get_formatted_duration $start_time)
 
     if [ $cmake_result -ne 0 ]; then
-        echo -e "${CLR_RED}Generating Makefile failed in $duration${CLR_RESET}"
-        exit 1
+        log_error "Generating Makefile failed in $duration"
+        return 1
     fi
 
-    echo -e "${CLR_GREEN}Makefile generated in $cmake_duration${CLR_RESET}"
+    log_success "Makefile generated in $cmake_duration"
 
     middle_time=$(date_now)
 
@@ -1269,50 +1108,36 @@ cmd_compile() {
     local total_time=$(get_formatted_duration $start_time)
 
     if [ $make_result -ne 0 ]; then
-        echo -e "${CLR_RED}Compilation failed in $make_duration${CLR_RESET}"
-        exit 1
+        log_error "Compilation failed in $make_duration"
+        return 1
     fi
 
-    echo -e "${CLR_GREEN}Compilation succeed in $make_duration${CLR_RESET}"
+    log_success "Compilation succeed in $make_duration"
     echo -e "${CLR_DGRAY}Total compilation time : $total_time${CLR_RESET}"
 
     return 0
 }
 
 cmd_run() {
-    if [ -z "$PREPARED" ]; then
-        internal_prepare_build_run $@
-    fi
+    [ -z "$PREPARED" ] &&internal_prepare_build_run $@
 
 	echo -e -n "${CLR_DGRAY}"
     cmd_compile
     local res=$?
 	echo -e -n "${CLR_RESET}"
 
-    if [ $res -ne 0 ]; then
-        exit 1
-    fi
-
-    if [ "$X_RULE" == "shared" ]; then
-        internal_update_library_include
-    fi
-
-    if [ $RUN_AFTER_COMPILE -eq 0 ]; then
-        exit 0
-    fi
+    [ $res -ne 0 ] && exit 1
+    [ "$X_RULE" == "shared" ] && internal_update_library_include
+    [ $RUN_AFTER_COMPILE -eq 0 ] && exit 0
 
     echo
-
     log "----- Executing ${X_SUBMODE^^} mode -----\n\n"
 
-    # print in which folder we currently are
     cd "$P_OUT_DIR/"
 
-    if [ "$X_SUBMODE" == "debug" ]; then
-        gdb ./$X_EXECUTABLE$X_PRGM_EXT $@
-    else
-        ./$X_EXECUTABLE$X_PRGM_EXT $@
-    fi
+    [ "$X_SUBMODE" == "debug" ]\
+        && gdb ./$X_EXECUTABLE$X_PRGM_EXT $@\
+        || ./$X_EXECUTABLE$X_PRGM_EXT $@
 
     echo
 }
@@ -1320,96 +1145,60 @@ cmd_run() {
 internal_prepare_build_run() {
     PREPARED="1"
 
-    local i
-    local j=0
-    local hasClean=0
-    local hasMode=0
-
     X_EXECUTABLE=$(capitalize "$P_NAME")
     X_MODE="debug"
     X_SUBMODE="dev"
     X_RULE="build"
 
+    local i
+    local j=0
+    local hasClean=0
+    local hasMode=0
+
     for i in 1 2 3; do
-        if [ $i -le $# ]; then
-            case ${!i} in
-                "-d"|"-g"|"-r"|"--debug"|"--release"|"--dev"|"--static"|"--shared")
+        [ $i -gt $# ] && break
+
+        case ${!i} in
+            "-d"|"-g"|"-r"|"--debug"|"--release"|"--dev"|"--static"|"--shared")
                 ((j=j+1))
 
-                if [[ hasMode -eq 0 ]]; then
-                    hasMode=1
-                    X_RULE="build"
+                [[ hasMode -ne 0 ]] && continue
 
-                    case ${!i} in
-                        "-g"|"--debug")
-                            X_MODE="debug"
-                            X_SUBMODE="debug";;
+                hasMode=1
+                X_RULE="build"
 
-                        "-d"|"--dev")
-                            X_MODE="debug"
-                            X_SUBMODE="dev";;
+                case ${!i} in
+                    "-g"|"--debug")     X_MODE="debug"   X_SUBMODE="debug";;
+                    "-d"|"--dev")       X_MODE="debug"   X_SUBMODE="dev";;
+                    "-r"|"--release")   X_MODE="release" X_SUBMODE="release";;
+                    "--static")         X_MODE="debug"   X_RULE="static"        RUN_AFTER_COMPILE=0;;
+                    "--shared")         X_MODE="debug"   X_RULE="shared"        RUN_AFTER_COMPILE=0;;
+                esac
+            ;;
 
-                        "-r"|"--release")
-                            X_MODE="release"
-                            X_SUBMODE="release";;
-
-                        "--static")
-                            X_MODE="debug"
-                            X_RULE="static"
-                            RUN_AFTER_COMPILE=0;;
-
-                        "--shared")
-                            X_MODE="debug"
-                            X_RULE="shared"
-                            RUN_AFTER_COMPILE=0;;
-                    esac
-                fi;;
-
-                "-f"|"--force")
-                    ((j=j+1))
-
-                    if [[ hasClean -eq 0 ]]; then
-                        hasClean=1
-                    fi;;
-            esac
-        fi
+            "-f"|"--force")
+                ((j=j+1))
+                [[ hasClean -eq 0 ]] && hasClean=1
+            ;;
+        esac
     done
 
-    while ((j > 0)); do
-        shift
-        ((j=j-1))
-    done
+    while ((j > 0)); do shift; ((j--)); done
 
     case "$OSTYPE" in
-        "linux"*)
-            X_PRGM_EXT=""
-            X_OS="LINUX";;
-        "darwin"*)
-            X_PRGM_EXT=".app"
-            X_OS="MACOS";;
-        "cygwin"|"msys"|"win32")
-            X_PRGM_EXT=".exe"
-            X_OS="WINDOWS";;
+        "linux"*)                X_PRGM_EXT=""      X_OS="LINUX";;
+        "darwin"*)               X_PRGM_EXT=".app"  X_OS="MACOS";;
+        "cygwin"|"msys"|"win32") X_PRGM_EXT=".exe"  X_OS="WINDOWS";;
     esac
 
-    if [ ! -z "$X_OS" ]; then
-        X_MACRO="-D$X_OS"
-    fi
-    
+    [ ! -z "$X_OS" ] && X_MACRO="-D$X_OS"
     X_MACRO="$X_MACRO -D${X_MODE^^}"
-    # [[ X_RULE == 'build' ]] &&  X_MACRO="-D${X_MODE^^}" || X_MACRO=""
 
-    # clean to rebuild everything
-    if [[ hasClean -eq 1 && -f "Makefile" ]]; then
-        [[ $VERBOSE -eq 0 ]] && make clear 1>/dev/null || make clear
-    fi
+    [[ hasClean -eq 1 && -f "Makefile" ]] && make clear &> $OUTPUT
 }
 
 cmd_clean_project() {
-    if [ -d "$P_BUILD_DIR" ]; then
-        rm -r "$P_BUILD_DIR"/*
-    fi
-
+    [ -d "$P_BUILD_DIR" ] && rm -r "$P_BUILD_DIR"/*
     echo "Project cleaned."
 }
 
@@ -1420,65 +1209,53 @@ cmd_clean_project() {
 # --------------------- Script section ----------------------
 
 cmd_update_script() {
-    sudo wget -q -O "$SCRIPT_PATH" "$UPDATE_URL"
-    local r=$?
-    VERSION=${VERSION:-0.1}
+    if ! sudo wget -q -O "$SCRIPT_PATH" "$UPDATE_URL"; then
+        log_error "Failed to update"
+        exit 1
+    fi
 
-    if [ $r -eq 0 ]; then
-        newVersion="$(grep -Eo 'VERSION=[0-9]+\.[0-9]+' $SCRIPT_PATH | cut -d'=' -f2)"
-        
-        if [ "$VERSION" == $newVersion ]; then
-            echo "Already on latest version ($VERSION)."
-        else
-            echo "v$VERSION -> v$newVersion"
-            echo -e "${CLR_GREEN}Successfully updated${CLR_RESET}"
-        fi
+    VERSION=${VERSION:-0.1}
+    newVersion="$(grep -Eo 'VERSION=[0-9]+\.[0-9]+' $SCRIPT_PATH | cut -d'=' -f2)"
+    
+    if [ "$VERSION" == $newVersion ]; then
+        echo "Already on latest version ($VERSION)."
     else
-        echo -e "${CLR_RED}Failed to update${CLR_RESET}"
+        echo "v$VERSION -> v$newVersion"
+        log_success "Successfully updated$"
     fi
 
     exit 0
 }
 
 cmd_get_help() {
+    echo -e "$BRAND"
     echo -e "$HELP_MESSAGE"
 }
 
 cmd_set_global_config() {
-    local key=$1
-    local value=$2
-
-    if [ -z "$key" ] || [ -z "$value" ]; then
+    if [ -z "$1" ] || [ -z "$2" ]; then
         echo "Usage: $COMMAND_NAME global <key> <value>"
         exit 1
     fi
 
-    case $key in
-        "lang")
-            internal_set_default_init_lang $value
-            ;;
-        *)
-            echo "Invalid key."
-            exit 1
-            ;;
+    case $1 in
+        "lang") internal_set_default_init_lang $2;;
+        *) log_error "Invalid key."; exit 1;;
     esac
 }
 
 internal_set_default_init_lang() {
     if [[ ! "$1" =~ ^(c|cpp)$ ]]; then
-        echo -e "${CLR_RED}Invalid language. Supported languages are c and cpp.${CLR_CLEAR}"
+        log_error "Invalid language. Supported languages are c and cpp."
         exit 1
     fi
 
-    # replace in the script directly, with the sed command
-    sudo sed -i "s/DEFAULT_INIT_LANG=\"$DEFAULT_INIT_LANG\"/DEFAULT_INIT_LANG=\"$1\"/" "$SCRIPT_PATH"
-
-    if [ $? -ne 0 ]; then
-        echo -e "${CLR_RED}Failed to set default language for project initialization.${CLR_CLEAR}"
+    if ! sudo sed -i "s/DEFAULT_INIT_LANG=\"$DEFAULT_INIT_LANG\"/DEFAULT_INIT_LANG=\"$1\"/" "$SCRIPT_PATH"; then
+        log_error "Failed to set default language for project initialization."
         exit 1
     fi
 
-    echo -e "${CLR_GREEN}Default language for project initialization set to $1.${CLR_CLEAR}"
+    log_success "Default language for project initialization set to $1."
 }
 
 cmd_get_version() {
@@ -1514,6 +1291,12 @@ CLR_DGRAY="\033[0;90m"
 CLR_LGRAY="\033[0;37m"
 
 #
+BRAND="
+      \ |  __| _ \  \  |
+     .  |  _|  __/ |\/ |
+    _|\_| _|  _|  _|  _|
+"
+
 HELP_MESSAGE="C/C++ run script v$VERSION by NoxFly
 
 Usage : 
@@ -1584,33 +1367,16 @@ fi
 
 case $1 in
 # General
-    --help|-h)
-        cmd_get_help
-        ;;
-    --version|-V)
-        cmd_get_version
-        ;;
-    --update|-U)
-        cmd_update_script
-        ;;
+    --help|-h) cmd_get_help;;
+    --version|-V) cmd_get_version;;
+    --update|-U) cmd_update_script;;
 
-    global)
-        cmd_set_global_config $2 $3
-        ;;
+    global) cmd_set_global_config $2 $3;;
 
 # Project management
-    init)
-        cmd_init_project $2
-        ;;
-    generate|g)
-        ensure_inside_project
-        shift
-        cmd_generate $@
-        ;;
-    patch|minor|major)
-        ensure_inside_project
-        cmd_patch_version "$1"
-        ;;
+    init) cmd_init_project $2;;
+    generate|g) ensure_inside_project; shift; cmd_generate $@;;
+    patch|minor|major) ensure_inside_project; cmd_patch_version "$1";;
     set)
         ensure_inside_project
         load_config
@@ -1621,10 +1387,7 @@ case $1 in
         ;;
 
 # Package management
-    install|i)
-        ensure_inside_project
-        cmd_install_all_packages
-        ;;
+    install|i) ensure_inside_project; cmd_install_all_packages;;
     add)
         ensure_inside_project
         if [ -z "$2" ] || [ -z "$3" ]; then
@@ -1651,33 +1414,14 @@ case $1 in
             exit 1
         fi
         shift
-        cmd_uninstall_package 0 $@
+        cmd_uninstall_package $@
         ;;
-    list|l)
-        ensure_inside_project
-        cmd_list_packages
-        ;;
+    list|l) ensure_inside_project; cmd_list_packages;;
 
 # Compilation & Execution
-    run)
-        ensure_project_structure
-        cmd_run $@
-        ;;
-    build)
-        ensure_project_structure
-        cmd_compile $@
-        exit $?
-        ;;
+    run) ensure_project_structure; cmd_run $@;;
+    build) ensure_project_structure; cmd_compile $@; exit $?;;
+    clean) ensure_project_structure, cmd_clean_project;;
 
-    clean)
-        ensure_project_structure
-        cmd_clean_project
-        ;;
-
-    *)
-        echo "Type $COMMAND_NAME --help to get more informations on how to use this command."
-        exit 1
-        ;;
+    *) echo "Type $COMMAND_NAME --help to get more informations on how to use this command."; exit 1;;
 esac
-
-exit 0
