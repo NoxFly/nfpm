@@ -1,2 +1,3 @@
 - nf list buggy, first line ghost
 - nf init command uncomplete
+- GLOBALS that are loading strangly, half of the object is loaded and keys are transformed to indexes

@@ -50,7 +50,7 @@ nf -U
 
 ```sh
 # new project
-nf init
+nf new
 # build
 nf build
 # [build] + run
@@ -65,16 +65,16 @@ A path can be specified as first argument. If not present, it will create a new 
 
 ```sh
 # these are the default values
-nf init . --name=New Project --lang=cpp --mode=0
+nf new . --name=New Project --lang=cpp --mode=0
 # example of a non default base configuration
-nf init ./poc --name=poc --lang=c --mode=1
+nf new ./poc --name=poc --lang=c --mode=1
 
 # with verbose :
-nf init --mode=1 -v
+nf new --mode=1 -v
 
 # if no language specified and not set in global config
 # it will ask you :
-nf init
+nf new
 # Choose the project language (c/CPP):
 # (cpp is chosen if you hit Enter with blank value)
 ```

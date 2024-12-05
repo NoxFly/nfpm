@@ -1013,7 +1013,7 @@ internal_configure_os() {
 #              Thus, $0 is the script name, $1 is the command name.
 #              The rest of the arguments are the user's arguments.
 
-cmd_init_project() {
+cmd_new_project() {
     if [ -f "$CONFIG_FILE" ]; then
         log_error "A project is already initialized in this directory."
         exit 1;
@@ -1645,7 +1645,7 @@ case $1 in
     global) cmd_set_global_config $@;;
 
 # Project management
-    init) cmd_init_project $@;;
+    new) cmd_new_project $@;;
     generate|g) cmd_generate $@;;
     patch|minor|major) cmd_patch_version $@;;
     set) cmd_change_project_configuration $@;;
