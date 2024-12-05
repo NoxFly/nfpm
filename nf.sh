@@ -828,7 +828,7 @@ internal_prepare_build_run() {
     local hasClean=0
     local hasMode=0
 
-    while (( $# > 0 )); do
+    while [ $# > 0 ]; do
         case "$1" in
             "-d"|"-g"|"-r"|"--dev"|"--debug"|"--release")
                 [[ hasMode -ne 0 ]] && continue
@@ -1055,7 +1055,7 @@ cmd_new_project() {
     local mode=0
     local verbose=0
     
-    while [ $# -gt 0 ]; then
+    while [ $# -gt 0 ]; do
         case "$1" in
             --name=*) name="${1#*=}";;
             --lang=*) lang="${1#*=}";;
