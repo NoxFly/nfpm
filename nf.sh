@@ -36,11 +36,11 @@ log() {
 }
 
 log_error() {
-    echo -e "${CLR_RED}$@${CLR_CLEAR}"
+    echo -e "${CLR_RED}$@${CLR_RESET}"
 }
 
 log_success() {
-    echo -e "${CLR_GREEN}$@${CLR_CLEAR}"
+    echo -e "${CLR_GREEN}$@${CLR_RESET}"
 }
 
 capitalize() {
@@ -49,6 +49,11 @@ capitalize() {
 
 is_command_available() {
     command -v $1 &> /dev/null
+}
+
+set_project_path() {
+    PROJECT_PATH="$1"
+    CONFIG_PATH="$PROJECT_PATH/$CONFIG_FILE"
 }
 
 # -----------------------------------------------------------
@@ -60,36 +65,10 @@ is_command_available() {
 #              Exit otherwise.
 
 ensure_config_integrity() {
-    # structure mode
-    if [[ ! $P_MODE =~ ^(0|1)$ ]]; then
-        log_error "Invalid project mode. Supported modes are 0 and 1."
-        exit 1
-    fi
-
-    # language
-    if [[ ! $P_LANG =~ ^(c|cpp)$ ]]; then
-        log_error "Invalid project type. Supported types are c and cpp."
-        exit 1
-    fi
-
-    # check language version
-    if [ "$P_LANG" == "c" ]; then
-        if [[ ! "$P_LANG_VERSION" =~ ^(89|99|11|17|23)$ ]]; then
-            log_error "Invalid C version. Supported versions are 89, 99, 11, 17, 23."
-            exit 1
-        fi
-    else
-        if [[ ! "$P_LANG_VERSION" =~ ^(03|11|14|17|20|23)$ ]]; then
-            log_error "Invalid C++ version. Supported versions are 03, 11, 14, 17, 20, 23."
-            exit 1
-        fi
-    fi
-
-    # guard
-    if [[ ! "$P_GUARD" =~ ^(ifndef|pragma)$ ]]; then
-        log_error "Invalid guard. Supported guards are ifndef and pragma."
-        exit 1
-    fi
+    ensure_valid_mode $P_MODE
+    ensure_valid_language "$P_LANG"
+    ensure_valid_language_version "$P_LANG" $P_LANG_VERSION
+    ensure_valid_guard "$P_GUARD"
 }
 
 ensure_inside_project() {
@@ -97,7 +76,7 @@ ensure_inside_project() {
 
     if [ ! -f "$CONFIG_FILE" ]; then
         log_error "Error: No configuration file found in the current directory."
-        echo "Create a new project thanks the '$COMMAND_NAME init' command."
+        echo "Create a new project thanks the '$COMMAND_NAME new' command."
         exit 1
     fi
 
@@ -115,6 +94,42 @@ ensure_project_structure() {
         exit 1
     fi
 }
+
+ensure_valid_language() {
+    if [[ ! "$1" =~ ^(c|cpp)$ ]]; then
+        log_error "Invalid language. Please choose c or cpp."
+        exit 1
+    fi
+}
+
+ensure_valid_language_version() {
+    if [ "$1" == "c" ]; then
+        if [[ ! "$2" =~ ^(89|99|11|17|23)$ ]]; then
+            log_error "Invalid C version. Supported versions are 89, 99, 11, 17, 23."
+            exit 1
+        fi
+    else
+        if [[ ! "$2" =~ ^(03|11|14|17|20|23)$ ]]; then
+            log_error "Invalid C++ version. Supported versions are 03, 11, 14, 17, 20, 23."
+            exit 1
+        fi
+    fi
+}
+
+ensure_valid_guard() {
+    if [[ ! "$1" =~ ^(ifndef|pragma)$ ]]; then
+        log_error "Invalid guard. Please choose ifndef or pragma."
+        exit 1
+    fi
+}
+
+ensure_valid_mode() {
+    if [[ ! $1 =~ ^(0|1)$ ]]; then
+        log_error "Invalid project mode. Supported modes are 0 and 1."
+        exit 1
+    fi
+}
+
 
 # -----------------------------------------------------------
 # ------------------------- OS-LIKE -------------------------
@@ -188,11 +203,11 @@ internal_load_config() {
     P_GUARD=$(internal_get_category_field_value "config" "guard")
     P_LANG=$(internal_get_category_field_value "config" "type")
     P_LANG_VERSION=$(internal_get_category_field_value "config" "${P_LANG}Version")
-    P_SRC_DIR="./src"
-    [[ $P_MODE -eq 0 ]] && P_INC_DIR="./include" || P_INC_DIR="$P_SRC_DIR"
-    P_OUT_DIR="./bin"
-    P_BUILD_DIR="./build"
-    P_LIB_DIR="./libs"
+    P_SRC_DIR="${PROJECT_PATH}src"
+    [[ $P_MODE -eq 0 ]] && P_INC_DIR="${PROJECT_PATH}include" || P_INC_DIR="$P_SRC_DIR"
+    P_OUT_DIR="${PROJECT_PATH}bin"
+    P_BUILD_DIR="${PROJECT_PATH}build"
+    P_LIB_DIR="${PROJECT_PATH}libs"
 
     ensure_config_integrity
 
@@ -204,16 +219,16 @@ internal_load_config() {
 
 internal_create_config_category() {
     local category_name=$1
-    if ! grep -q " $category_name:" $CONFIG_FILE; then
-        echo -e "$category_name:\n" >> $CONFIG_FILE
+    if ! grep -q " $category_name:" $CONFIG_PATH; then
+        echo -e "$category_name:\n" >> $CONFIG_PATH
     fi
 }
 
 internal_set_category_field_value() { # $1=category, $2=field, $3=value
-    if grep -q "^$1:" $CONFIG_FILE; then
-        if grep -q "^  $2:" $CONFIG_FILE; then
+    if grep -q "^$1:" $CONFIG_PATH; then
+        if grep -q "^  $2:" $CONFIG_PATH; then
             # Use a different delimiter (|) to avoid conflicts with special characters in 3
-            sed -i "s|^  $2:.*|  $2: $3|" $CONFIG_FILE
+            sed -i "s|^  $2:.*|  $2: $3|" $CONFIG_PATH
         else
             # Append the new field to the end of the existing category
             awk -v cat="$1" -v field="$2" -v value="$3" '
@@ -233,7 +248,7 @@ internal_set_category_field_value() { # $1=category, $2=field, $3=value
                     print "  " field ": " value
                 }
             }
-            ' "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+            ' "$CONFIG_PATH" > "$CONFIG_PATH.tmp" && mv "$CONFIG_PATH.tmp" "$CONFIG_PATH"
         fi
     else
         # Create the category and add the field
@@ -256,7 +271,7 @@ internal_set_category_field_value() { # $1=category, $2=field, $3=value
                 print ""
             }
         }
-        ' "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+        ' "$CONFIG_PATH" > "$CONFIG_PATH.tmp" && mv "$CONFIG_PATH.tmp" "$CONFIG_PATH"
     fi
 }
 
@@ -276,12 +291,12 @@ internal_get_category_field_value() { # $1=category, $2=field
             exit
         }
     }
-    ' "$CONFIG_FILE"
+    ' "$CONFIG_PATH"
 }
 
 internal_create_project_config() { # $1=name, $2=mode, $3=language, $4=language version, $5=guard
     # create file first
-    touch $CONFIG_FILE
+    touch $CONFIG_PATH
 
     # categories
     internal_create_config_category "project"
@@ -469,7 +484,7 @@ internal_sort_dependencies() {
             }
         }
     }
-    ' "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+    ' "$CONFIG_PATH" > "$CONFIG_PATH.tmp" && mv "$CONFIG_PATH.tmp" "$CONFIG_PATH"
 }
 
 internal_set_project_name() {
@@ -512,10 +527,7 @@ internal_set_cpp_version() {
         exit 1
     fi
 
-    if [[ ! "$1" =~ ^(03|11|14|17|20|23)$ ]]; then
-        log_error "Invalid C++ version. Supported versions are 03, 11, 14, 17, 20, 23."
-        exit 1
-    fi
+    ensure_valid_language_version "cpp" $1
 
     P_LANG_VERSION=$1
     internal_set_category_field_value "config" "cppVersion" $1
@@ -529,10 +541,7 @@ internal_set_c_version() {
         exit 1
     fi
 
-    if [[ ! "$1" =~ ^(89|99|11|17|23)$ ]]; then
-        log_error "Invalid C version. Supported versions are 89, 99, 11, 17, 23."
-        exit 1
-    fi
+    ensure_valid_language_version "c" $1
 
     P_LANG_VERSION=$1
     internal_set_category_field_value "config" "cVersion" $1
@@ -542,11 +551,7 @@ internal_set_c_version() {
 
 internal_set_project_mode() { # $1=mode
     ensure_project_structure
-
-    if [[ ! $1 =~ ^(0|1)$ ]]; then
-        log_error "Invalid project mode. Supported modes are 0 and 1."
-        exit 1
-    fi
+    ensure_valid_mode $1
 
     if [ $1 -eq $P_MODE ]; then
         echo "Project mode is already set to $1."
@@ -565,11 +570,7 @@ internal_set_project_mode() { # $1=mode
 }
 
 internal_set_guard() {
-    if [[ ! "$1" =~ ^(ifndef|pragma)$ ]]; then
-        log_error "Invalid guard. Supported guards are ifndef and pragma."
-        exit 1
-    fi
-
+    ensure_valid_guard $1
     P_GUARD=$1
     internal_set_category_field_value "config" "guard" "$1"
     echo "Guard set to $1."
@@ -608,7 +609,7 @@ internal_migrate_1_to_0() {
     find "$src_dir" -type f -name "*.$P_HDR_EXT" -print0 | while IFS= read -r -d $'\0' header; do
         relative_header="${header#$src_dir/}" # remove src/ from the path
         dirs="$(dirname "$relative_header")" # get the directories
-        [[ "$dirs" =~ ^(\.\/?|\.\/) ]] && dirs="" # remove ./ from the path if present
+        [[ "$dirs" =~ ^(\.\/?|\.\/) ]] && dirs="" # remove ./ from the path if present # TODO to verify
         base_dir="$(basename "$dirs")" # get the directory name that contains the header file
         header_filename="$(basename "$relative_header")" # get the header filename
         header_noext="${header_filename%.*}" # get the header filename without extension
@@ -665,7 +666,7 @@ internal_migrate_0_to_1() {
         done
 
         mkdir -p "$(dirname "$new_filepath")" || return 1
-        mv "./include/$relative_header" "$new_filepath.$P_HDR_EXT" || return 1
+        mv "${PROJECT_PATH}include/$relative_header" "$new_filepath.$P_HDR_EXT" || return 1
 
         for src_ext in "${existing_src_files[@]}"; do
             mv "$src_filepath_base.$src_ext" "$new_filepath.$src_ext"
@@ -677,8 +678,8 @@ internal_migrate_0_to_1() {
 }
 
 internal_swap_structure() {
-    local src_dir="./src"
-    local inc_dir="./include"
+    local src_dir="${PROJECT_PATH}src"
+    local inc_dir="${PROJECT_PATH}include"
 
     local current_mode=$P_MODE
     local desired_mode=$1
@@ -876,14 +877,20 @@ internal_set_default_init_lang() {
         exit 1
     fi
 
-    if [[ ! "$1" =~ ^(c|cpp)$ ]]; then
-        log_error "Invalid language. Supported languages are c and cpp."
+    ensure_valid_language "$1"
+    internal_set_global_config "DEFAULT_INIT_LANG" "$1"
+    log_success "Default language for project initialization set to $1."
+}
+
+internal_set_default_guard_manager() {
+    if [ -z "$1" ]; then
+        echo "Usage: $COMMAND_NAME global guard <guard_manager>"
         exit 1
     fi
 
-    internal_set_global_config "DEFAULT_INIT_LANG" "$1"
-
-    log_success "Default language for project initialization set to $1."
+    ensure_valid_guard "$1"
+    internal_set_global_config "DEFAULT_GUARD" "$1"
+    log_success "Default guard set to $1."
 }
 
 internal_set_default_package_manager() {
@@ -960,10 +967,10 @@ internal_set_global_config() { # $1=key, $2=value
 
     # find the key and edit its value or insert it if not found
     # config file always exists so don't check its existence
-    if grep -q "^$1=" "$config_file"; then
-        sed -i "s/^$1=.*/$1=$2/" "$config_file"
+    if grep -q "^$1=" "$CONFIG_PATH"; then
+        sed -i "s/^$1=.*/$1=$2/" "$CONFIG_PATH"
     else
-        echo "$1=$2" >> "$config_file"
+        echo "$1=$2" >> "$CONFIG_PATH"
     fi
 
     GLOBALS["$1"]="$2"
@@ -973,7 +980,7 @@ internal_load_global_config() {
     local config_file="$PREFERENCE_PATH/global"
     local first_execution=1
 
-    if [ -f "$config_file" ]; then
+    if [ -f "$CONFIG_PATH" ]; then
         first_execution=0
         # content looks like this :
         # KEY=VALUE
@@ -981,10 +988,10 @@ internal_load_global_config() {
         # ...
         while IFS='=' read -r key value; do
             GLOBALS["$key"]="$value"
-        done < "$config_file"
+        done < "$CONFIG_PATH"
     else
         mkdir -p "$PREFERENCE_PATH"
-        touch "$config_file"
+        touch "$CONFIG_PATH"
     fi
 
     local pm
@@ -1052,22 +1059,29 @@ cmd_new_project() {
     local path="."
     local name="New Project"
     local lang=""
+    local lang_version
     local mode=0
     local verbose=0
-    
+    local guard="${GLOBALS["DEFAULT_GUARD"]}"
+
+    shift
+
     while [ $# -gt 0 ]; do
         case "$1" in
             --name=*) name="${1#*=}";;
             --lang=*) lang="${1#*=}";;
             --mode=*) mode="${1#*=}";;
+            --guard=*) guard="${1#*=}";;
             *) path="${1%/}";;
         esac
         shift
     done
 
+    [[ ! "$path" =~ ^(\.|\/) ]] && path="./$path"
+
     CONFIG_FILE="$path/project.yml"
     
-    if [ -f "$CONFIG_FILE" ]; then
+    if [ -f "$CONFIG_PATH" ]; then
         log_error "A project is already initialized in this directory."
         exit 1;
     fi
@@ -1088,18 +1102,21 @@ cmd_new_project() {
         fi
     fi
 
-    # if no c or cpp, exit
-    if [[ ! "$lang" =~ ^(c|cpp)$ ]]; then
-        log_error "Invalid language. Please choose c or cpp. Just hit Enter if it's cpp (default)."
-        exit 1
-    fi
+    [ -z "$guard" ] && guard="ifndef"
+    lang_version=$([[  "$lang" == "c" ]] && echo 17 || echo 20)
 
-    local lang_version=$([[  "$lang" == "c" ]] && echo 17 || echo 20)
+    ensure_valid_guard "$guard"
+    ensure_valid_language "$lang"
+    ensure_valid_mode "$mode"
+    ensure_valid_language_version "$lang" "$lang_version"
 
-    internal_create_project_config "New Project" 0 "$lang" $lang_version "ifndef"
+    mkdir -p "$path" || { log_error "Failed to create the project directory."; exit 1; }
+
+    set_project_path "$path"
+    internal_create_project_config "$name" $mode "$lang" $lang_version "$guard"
 
     log_success "New project initialized !\n"
-    echo -e "You can customize your project's configuration in the $CONFIG_FILE file.\n"
+    echo -e "You can customize your project's configuration in the $CONFIG_PATH file.\n"
     echo    "NOTE : do not modify the project.yml directly. It is strongly recommended"
     echo    "       to use the script's commands for that, as it can dispatch changes"
     echo -e "       in other configurations like the cmake.\n"
@@ -1141,7 +1158,7 @@ cmd_install_all_packages() {
             [ $installStatus -eq 1 ] && installed_success_count=$((installed_success_count+1))
             [ $installStatus -eq -1 ] && installed_failed_count=$((installed_failed_count+1))
         done
-    done < "$CONFIG_FILE"
+    done < "$CONFIG_PATH"
 
     local duration=$(get_formatted_duration $start_time)
     [ $installed_failed_count -eq 0 ] && [ $installed_success_count -eq 0 ] && echo "Up to date."
@@ -1167,9 +1184,9 @@ cmd_add_package() { # $1=dependency name, $2..=packages
     local start_time=$(date_now)
 
     # Step 1: Check if the key already exists in the dependencies list
-    if grep -q "  $dep:" $CONFIG_FILE; then
+    if grep -q "  $dep:" $CONFIG_PATH; then
         # Step 1.a: Look for already present values for this key
-        local existing_packages=$(grep "  $dep:" $CONFIG_FILE | awk -F': ' '{print $2}')
+        local existing_packages=$(grep "  $dep:" $CONFIG_PATH | awk -F': ' '{print $2}')
         for package in $existing_packages; do
             for i in "${!packages[@]}"; do
                 if [ "${packages[i]}" == "$package" ]; then
@@ -1181,7 +1198,7 @@ cmd_add_package() { # $1=dependency name, $2..=packages
     fi
 
     # Check for packages in all dependency lines
-    local all_existing_packages=$(awk '/^  / {print $2}' $CONFIG_FILE)
+    local all_existing_packages=$(awk '/^  / {print $2}' $CONFIG_PATH)
     for package in $all_existing_packages; do
         for i in "${!packages[@]}"; do
             if [ "${packages[i]}" == "$package" ]; then
@@ -1240,7 +1257,7 @@ cmd_uninstall_packages() { # $2..=packages
     local start_time=$(date_now)
 
     for package_name in "$@"; do
-        package_line=$(grep -m 1 "  $package_name:" "$CONFIG_FILE")
+        package_line=$(grep -m 1 "  $package_name:" "$CONFIG_PATH")
 
         if [ -z "$package_line" ]; then
             log_error "$package_name is not in the dependency list of this project."
@@ -1273,12 +1290,12 @@ cmd_remove_packages() { # $2..=packages
     shift
 
     for package_name in "$@"; do
-        if ! grep -q "  $package_name:" $CONFIG_FILE; then
+        if ! grep -q "  $package_name:" $CONFIG_PATH; then
             log_error "$package_name is not in the dependency list of this project."
             continue
         fi
 
-        sed -i "/  $package_name:/d" $CONFIG_FILE
+        sed -i "/  $package_name:/d" $CONFIG_PATH
         echo "$package_name has been removed from the project."
 
         local uninstall
@@ -1345,7 +1362,7 @@ cmd_list_packages() {
             }
         }
     }
-    ' "$CONFIG_FILE"
+    ' "$CONFIG_PATH"
 }
 
 cmd_patch_version() { # $2=patch|minor|major
@@ -1493,8 +1510,8 @@ cmd_run() { # $@=args
     fi
 
     [ "$X_SUBMODE" == "debug" ]\
-        && gdb ./$X_EXECUTABLE$X_PRGM_EXT $@\
-        || ./$X_EXECUTABLE$X_PRGM_EXT $@
+        && gdb $PROJECT_PATH$X_EXECUTABLE$X_PRGM_EXT $@\
+        || $PROJECT_PATH$X_EXECUTABLE$X_PRGM_EXT $@
 
     echo
 }
@@ -1536,8 +1553,9 @@ cmd_set_global_config() {
     fi
 
     case $2 in
-        "lang") internal_set_default_init_lang $3;;
         "pm") internal_set_default_package_manager $3;;
+        "lang") internal_set_default_init_lang $3;;
+        "guard") internal_set_default_guard_manager $3;;
         *) log_error "Invalid key."; exit 1;;
     esac
 }
@@ -1566,6 +1584,8 @@ SCRIPT_PATH="$0"
 COMMAND_NAME=$(basename "$0" | sed 's/\.[^.]*$//')
 
 CONFIG_FILE="project.yml"
+PROJECT_PATH="./"
+CONFIG_PATH="$PROJECT_PATH/$CONFIG_FILE"
 REPO_URL="https://github.com/NoxFly/nfpm"
 UPDATE_URL="https://raw.githubusercontent.com/NoxFly/nfpm/main/nf.sh"
 

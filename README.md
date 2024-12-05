@@ -65,12 +65,12 @@ A path can be specified as first argument. If not present, it will create a new 
 
 ```sh
 # these are the default values
-nf new . --name=NewProject --lang=cpp --mode=0
+nf new . --name=NewProject --lang=cpp --mode=0 --guard=ifndef
 # example of a non default base configuration
-nf new ./poc --name=poc --lang=c --mode=1
+nf new ./poc --name=poc --lang=c --mode=1 --guard=pragma
 
 # with verbose :
-nf new --mode=1 -v
+nf new -v
 
 # if no language specified and not set in global config
 # it will ask you :
