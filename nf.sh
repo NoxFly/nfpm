@@ -123,19 +123,22 @@ ensure_project_structure() {
 # description: functions used by commands that use os-specific commands.
 #              Tries to find the right command for the current OS and uses it.
 
-os_install() { # $@=packages
-    case $APT in
-        "apt"|"apt-get"|"dnf"|"yum"|"zypper"|"pacman"|"snap")
-            sudo $APT install -y $@ &> $OUTPUT;;
-        "brew")
-            brew install $@ &> $OUTPUT;;
-        "setup-x86_64.exe")
-            setup-x86_64.exe -q -P $@ &> $OUTPUT;;
-        *)
-            echo "Unsupported package manager: $APT"
-            return 1
-            ;;
+# functions that is "sudo apt-get update &> $OUTPUT"
+# but for each package manager that exist following the 
+os_update() {
+    case "${GLOBALS["PACKAGE_MANAGER"]}" in
+        "apt"|"apt-get") sudo apt-get update &> $OUTPUT;;
+        "brew") brew update &> $OUTPUT;;
+        "cygwin") pacman -Sy &> $OUTPUT;;
+        "msys") pacman -Sy &> $OUTPUT;;
+        "dnf") sudo dnf check-update &> $OUTPUT;;
+        "zypper") sudo zypper refresh &> $OUTPUT;;
+        "pacman") sudo pacman -Sy &> $OUTPUT;;
     esac
+}
+
+os_install() { # $@=packages
+    $APT $@ &> $OUTPUT
 }
 
 # used to know if a command is installed
@@ -274,6 +277,28 @@ internal_get_category_field_value() { # $1=category, $2=field
         }
     }
     ' "$CONFIG_FILE"
+}
+
+internal_create_project_config() { # $1=name, $2=mode, $3=language, $4=language version, $5=guard
+    # create file first
+    touch $CONFIG_FILE
+
+    # categories
+    internal_create_config_category "project"
+    internal_set_category_field_value "project" "name" "$1"
+    internal_set_category_field_value "project" "description" "No description provided."
+    internal_set_category_field_value "project" "version" "1.0.0"
+    internal_set_category_field_value "project" "author" ""
+    internal_set_category_field_value "project" "url" ""
+    internal_set_category_field_value "project" "license" ""
+
+    internal_create_config_category "config"
+    internal_set_category_field_value "config" "mode" $2
+    internal_set_category_field_value "config" "type" "$3"
+    internal_set_category_field_value "config" "${3}Version" $4
+    internal_set_category_field_value "config" "guard" "$5" # ifndef | pragma
+
+    internal_create_config_category "dependencies"
 }
 
 internal_create_base_project() {
@@ -798,42 +823,40 @@ internal_prepare_build_run() {
     X_EXECUTABLE=$(capitalize "$P_NAME")
     X_MODE="debug"
     X_SUBMODE="dev"
-    X_RULE="build"
+    X_RULE=""
 
-    local i
-    local j=0
     local hasClean=0
     local hasMode=0
 
-    for i in 1 2 3; do
-        [ $i -gt $# ] && break
-
-        case ${!i} in
-            "-d"|"-g"|"-r"|"--debug"|"--release"|"--dev"|"--static"|"--shared")
-                ((j=j+1))
-
+    while (( $# > 0 )); do
+        case "$1" in
+            "-d"|"-g"|"-r"|"--dev"|"--debug"|"--release")
                 [[ hasMode -ne 0 ]] && continue
-
                 hasMode=1
-                X_RULE="build"
 
-                case ${!i} in
+                case "$1" in
                     "-g"|"--debug")     X_MODE="debug"   X_SUBMODE="debug";;
                     "-d"|"--dev")       X_MODE="debug"   X_SUBMODE="dev";;
                     "-r"|"--release")   X_MODE="release" X_SUBMODE="release";;
-                    "--static")         X_MODE="debug"   X_RULE="static"        RUN_AFTER_COMPILE=0;;
-                    "--shared")         X_MODE="debug"   X_RULE="shared"        RUN_AFTER_COMPILE=0;;
                 esac
             ;;
 
-            "-f"|"--force")
-                ((j=j+1))
-                [[ hasClean -eq 0 ]] && hasClean=1
-            ;;
+            "--static"|"--shared")
+                [[ hasMode -ne 0 ]] && continue
+                hasMode=1
+                X_RULE="${1:2}"
+                RUN_AFTER_COMPILE=0
+                ;;
+
+            "-f"|"--force") hasClean=1;;
         esac
+
+        shift
     done
 
-    while ((j > 0)); do shift; ((j--)); done
+    [ -z "$X_RULE" ] && X_RULE="build"
+
+    [[ hasClean -eq 1 && -f "Makefile" ]] && make clear &> $OUTPUT
 
     case "$OSTYPE" in
         "linux"*)                X_PRGM_EXT=""      X_OS="LINUX";;
@@ -964,6 +987,8 @@ internal_load_global_config() {
         touch "$config_file"
     fi
 
+    local pm
+
     # if no "PACKAGE_MANAGER" key is found, set it to the detected package manager
     # or if set but testing the command fails, set it to the detected package manager
     if [ -z "${GLOBALS["PACKAGE_MANAGER"]}" ] || ! is_command_available "${GLOBALS["PACKAGE_MANAGER"]}"; then
@@ -979,7 +1004,17 @@ internal_load_global_config() {
         echo "To change it, use the command: $COMMAND_NAME global pm <package_manager>"
     fi
 
-    APT="${GLOBALS["PACKAGE_MANAGER"]}"
+    pm="${GLOBALS["PACKAGE_MANAGER"]}"
+
+    case $pm in
+        "apt"|"apt-get"|"dnf"|"yum"|"zypper"|"pacman"|"snap") APT="sudo $APT install -y";;
+        "brew") APT="brew install";;
+        "setup-x86_64.exe") APT="setup-x86_64.exe -q -P";;
+        *)
+            echo "Unsupported package manager: $APT"
+            return 1
+            ;;
+    esac
 
     return $first_execution
 }
@@ -1014,62 +1049,55 @@ internal_configure_os() {
 #              The rest of the arguments are the user's arguments.
 
 cmd_new_project() {
+    local path="."
+    local name="New Project"
+    local lang=""
+    local mode=0
+    local verbose=0
+    
+    while [ $# -gt 0 ]; then
+        case "$1" in
+            --name=*) name="${1#*=}";;
+            --lang=*) lang="${1#*=}";;
+            --mode=*) mode="${1#*=}";;
+            *) path="${1%/}";;
+        esac
+    done
+
+    CONFIG_FILE="$path/project.yml"
+    
     if [ -f "$CONFIG_FILE" ]; then
         log_error "A project is already initialized in this directory."
         exit 1;
     fi
 
-    local project_lang
-
-    if [ -z "$2" ]; then
+    if [ -z "$lang" ]; then
         if [ -z "${GLOBALS["DEFAULT_INIT_LANG"]}" ]; then
             # ask for C or CPP project
-            read -p "Choose the project language (c/CPP): " project_lang
+            read -p "Choose the project language (c/CPP): " lang
 
-            if [ -z "$project_lang" ]; then
-                project_lang="cpp"
+            if [ -z "$lang" ]; then
+                lang="cpp"
             fi
-        else
-            project_lang="${GLOBALS["DEFAULT_INIT_LANG"]}"
-        fi
-    else
-        project_lang="$2"
-    fi
 
-    if [ -z "${GLOBALS["DEFAULT_INIT_LANG"]}" ]; then
-        echo -e "\nHINT: You can set the default language for project creation with '$COMMAND_NAME global lang <c/cpp>'"
-        echo -e "      Thus, you won't be asked for the language anymore if you don't specify one.\n"
+            echo -e "\nHINT: You can set the default language for project creation with '$COMMAND_NAME global lang <c/cpp>'"
+            echo -e "      Thus, you won't be asked for the language anymore if you don't specify one.\n"
+        else
+            lang="${GLOBALS["DEFAULT_INIT_LANG"]}"
+        fi
     fi
 
     # if no c or cpp, exit
-    if [[ ! "$project_lang" =~ ^(c|cpp)$ ]]; then
+    if [[ ! "$lang" =~ ^(c|cpp)$ ]]; then
         log_error "Invalid language. Please choose c or cpp. Just hit Enter if it's cpp (default)."
         exit 1
     fi
 
-    local lang_version=$([[  "$project_lang" == "c" ]] && echo 17 || echo 20)
+    local lang_version=$([[  "$lang" == "c" ]] && echo 17 || echo 20)
 
-    # create file first
-    touch $CONFIG_FILE
+    internal_create_project_config "New Project" 0 "$lang" $lang_version "ifndef"
 
-    # categories
-    internal_create_config_category "project"
-    internal_set_category_field_value "project" "name" "New Project"
-    internal_set_category_field_value "project" "description" "No description provided."
-    internal_set_category_field_value "project" "version" "1.0.0"
-    internal_set_category_field_value "project" "author" ""
-    internal_set_category_field_value "project" "url" ""
-    internal_set_category_field_value "project" "license" ""
-
-    internal_create_config_category "config"
-    internal_set_category_field_value "config" "mode" 0
-    internal_set_category_field_value "config" "type" "$project_lang"
-    internal_set_category_field_value "config" "${project_lang}Version" $lang_version
-    internal_set_category_field_value "config" "guard" "ifndef" # ifndef | pragma
-
-    internal_create_config_category "dependencies"
-
-    echo -e "New project initialized !\n"
+    log_success "New project initialized !\n"
     echo -e "You can customize your project's configuration in the $CONFIG_FILE file.\n"
     echo    "NOTE : do not modify the project.yml directly. It is strongly recommended"
     echo    "       to use the script's commands for that, as it can dispatch changes"
@@ -1096,7 +1124,7 @@ cmd_generate() { # $2=type, $3=name
 cmd_install_all_packages() {
     ensure_inside_project; 
 
-    sudo apt-get update &> $OUTPUT
+    os_update
 
     local installed_success_count=0
     local installed_failed_count=0
@@ -1107,7 +1135,7 @@ cmd_install_all_packages() {
         [[ "$dependency" == "dependencies" ]] && { in_dependencies=1; continue; }
         [[ $in_dependencies -eq 1 && "$dependency" =~ ^[[:space:]]*$ ]] && in_dependencies=0
         [[ $in_dependencies -eq 1 ]] && for package in $packages; do
-            internal_install_package $dependency $package
+            internal_install_package $package
             installStatus=$?
             [ $installStatus -eq 1 ] && installed_success_count=$((installed_success_count+1))
             [ $installStatus -eq -1 ] && installed_failed_count=$((installed_failed_count+1))
@@ -1196,7 +1224,7 @@ cmd_add_package() { # $1=dependency name, $2..=packages
     echo -e "\n$added_count added, $installed_success_count installed, $installed_failed_count failed in $duration."
 }
 
-cmd_uninstall_packages() {
+cmd_uninstall_packages() { # $2..=packages
     ensure_inside_project
 
     if [ -z "$2" ]; then
@@ -1233,7 +1261,7 @@ cmd_uninstall_packages() {
     echo -e "\nUninstalled $package_count packages for $dependency_count dependencies in $duration."
 }
 
-cmd_remove_packages() {
+cmd_remove_packages() { # $2..=packages
     ensure_inside_project
 
     if [ -z "$2" ]; then
@@ -1346,7 +1374,7 @@ cmd_patch_version() { # $2=patch|minor|major
     echo -e "Version updated to ${CLR_GREEN}$P_VERSION.${CLR_RESET}"
 }
 
-cmd_change_project_configuration() {
+cmd_change_project_configuration() { # $2=key, $3=value
     ensure_inside_project
     internal_load_config
 
@@ -1439,7 +1467,7 @@ cmd_compile() {
     exit 0
 }
 
-cmd_run() {
+cmd_run() { # $@=args
     ensure_project_structure;
 
     [ -z "$PREPARED" ] && internal_prepare_build_run $@

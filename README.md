@@ -65,7 +65,7 @@ A path can be specified as first argument. If not present, it will create a new 
 
 ```sh
 # these are the default values
-nf new . --name=New Project --lang=cpp --mode=0
+nf new . --name=NewProject --lang=cpp --mode=0
 # example of a non default base configuration
 nf new ./poc --name=poc --lang=c --mode=1
 
@@ -78,6 +78,8 @@ nf new
 # Choose the project language (c/CPP):
 # (cpp is chosen if you hit Enter with blank value)
 ```
+
+Note : specifying a name during the `nf new` command via the `--name` argument does not allow spaces in it. Don't worry, you'll can change it later thanks a dedicated command (see below).
 
 #### Files generation
 
