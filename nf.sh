@@ -1062,6 +1062,7 @@ cmd_new_project() {
             --mode=*) mode="${1#*=}";;
             *) path="${1%/}";;
         esac
+        shift
     done
 
     CONFIG_FILE="$path/project.yml"
