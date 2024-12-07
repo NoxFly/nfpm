@@ -71,6 +71,30 @@ get_colored_mode() {
     echo -e "${c}${m}${CLR_RESET}"
 }
 
+background_task() { # $1=the task to run
+    "$@" &> $OUTPUT &
+
+    local pid=$!
+	local delay=0.1
+	local spinstr='|/-\'
+
+	tput civis  # Hide cursor
+
+	while [ "$(ps a | awk '{print $1}' | grep $pid)" ]; do
+		local temp=${spinstr#?}
+		printf " [%c]  " "$spinstr"
+		local spinstr=$temp${spinstr%"$temp"}
+		sleep $delay
+		printf "\b\b\b\b\b\b"
+	done
+	printf "    \b\b\b\b"
+	tput cnorm  # Show cursor
+
+    wait $pid
+
+    return $?
+}
+
 # -----------------------------------------------------------
 # ------------------------- GUARDS --------------------------
 # -----------------------------------------------------------
@@ -153,6 +177,14 @@ ensure_valid_mode() {
 # description: functions used by commands that use os-specific commands.
 #              Tries to find the right command for the current OS and uses it.
 
+os_admin_check() { # TODO : not compatible with Cygwin an Msys
+    sudo -v &> /dev/null
+    if [ $? -ne 0 ]; then
+        log_error "You need to have administrator privileges to run this command."
+        exit 1
+    fi
+}
+
 # functions that is "sudo apt-get update &> $OUTPUT"
 # but for each package manager that exist following the 
 os_update() {
@@ -168,17 +200,20 @@ os_update() {
         "pacman") cmd="sudo pacman -Sy";;
     esac
 
-    cmd &> $OUTPUT
+    os_admin_check
+    background_task $cmd
     return $?
 }
 
 os_install() { # $@=packages
-    $APT_INSTALL $@ &> $OUTPUT
+    os_admin_check
+    background_task $APT_INSTALL "$@"
     return $?
 }
 
 os_uninstall() { # $@=packages
-    $APT_UNINSTALL $@ &> $OUTPUT
+    os_admin_check
+    background_task $APT_UNINSTALL "$@"
     return $?
 }
 
@@ -1407,6 +1442,9 @@ cmd_remove_packages() { # $2..=packages
     fi
 
     shift
+
+    # trim $@
+    set -- $(echo $@ | xargs)
 
     for package_name in "$@"; do
         local package_line=$(internal_get_category_field_value "dependencies" "$package_name")

@@ -1,1 +1,0 @@
-- add animation when using long commands to not let blank "frozen-like" screen while it operates, if not verbose
