@@ -1668,7 +1668,7 @@ BRAND="
 
 HELP_MESSAGE="C/C++ run script v$NF_VERSION by NoxFly
 
-Usage : 
+Usage : nf <command> [options]
 
 ${CLR_LGRAY}# General${CLR_RESET}
 --help              -h                  Show the command's version and its basic usage.
