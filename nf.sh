@@ -225,7 +225,7 @@ internal_load_config() {
     ensure_config_integrity
 
     local ext_suffix=""
-    [ "P_LANG" == "cpp" ] && ext_suffix="pp"
+    [ "$P_LANG" == "cpp" ] && ext_suffix="pp"
     P_SRC_EXT="c$ext_suffix"
     P_HDR_EXT="h$ext_suffix"
 }
