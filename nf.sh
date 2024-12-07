@@ -95,6 +95,21 @@ background_task() { # $1=the task to run
     return $?
 }
 
+ask_for_installation() { # $1=required command, $2=optional message
+    msg=$([ -z "$2" ] && echo "continue" || echo "$2")
+    log_error "$1 is required to $msg."
+    echo -e "\nDo you want to install it? (Y/n)"
+    local answer
+    read -r answer
+
+    if [[ -z "$answer" || "$answer" =~ ^[Yy]$ ]]; then
+        os_install $1
+        return $?
+    fi
+
+    return 1
+}
+
 # -----------------------------------------------------------
 # ------------------------- GUARDS --------------------------
 # -----------------------------------------------------------
@@ -814,15 +829,14 @@ internal_swap_structure() {
 }
 
 internal_update_library_include() {
-    if ! is_command_available "rsync"; then
-        log_error "rsync is required to update the shared include folder."
-        return 1
-    fi
+    local required_commands=("rsync" "realpath")
 
-    if ! is_command_available "realpath"; then
-        log_error "realpath is required to update the shared include folder."
-        return 1
-    fi
+    for cmd in "${required_commands[@]}"; do
+        if ! is_command_available "$cmd" &&\
+            ! ask_for_installation "rsync" "update the shared include folder"; then
+            return 1
+        fi
+    done
 
     log "${CLR_DGRAY}Updating shared include folder... "
 
@@ -1130,21 +1144,20 @@ internal_configure_os() {
 }
 
 internal_compile() {
-    ensure_project_structure;
+    ensure_project_structure
 
     internal_prepare_build_run $@
 
-    if ! is_command_available "cmake"; then
-        log_error "cmake is required to compile the project."
-        return 1
-    fi
+    local required_commands=("cmake" "make")
 
-    if ! is_command_available "make"; then
-        log_error "make is required to compile the project."
-        return 1
-    fi
+    for cmd in "${required_commands[@]}"; do
+        if ! is_command_available "$cmd" &&\
+            ! ask_for_installation "$cmd" "compile the project"; then
+            return 1
+        fi
+    done
 
-    local lib=$([[ "$X_RULE" =~ ^(static|shared)$ ]] && echo "-D \"LIB=${X_MODE^^}\"" || echo "")
+    local lib=$([[ "$X_RULE" =~ ^(static|shared)$ ]] && echo "-D \"LIB=${X_RULE^^}\"" || echo "")
     local start_time=$(date_now)
 
     local c="cmake -S . -B $P_BUILD_DIR \
@@ -1597,7 +1610,7 @@ cmd_compile() {
 }
 
 cmd_run() { # $@=args
-    ensure_project_structure;
+    ensure_project_structure
 
     shift
 
@@ -1616,8 +1629,9 @@ cmd_run() { # $@=args
 
     cd "$P_OUT_DIR/"
 
-    if [ "$X_SUBMODE" == "debug" ] && ! is_command_available "gdb"; then
-        log_error "gdb is required to run the program in debug mode."
+    if [ "$X_SUBMODE" == "debug" ] &&\
+        ! is_command_available "gdb" &&\
+        ! ask_for_installation "gdb" "run the program in debug mode"; then
         exit 1
     fi
 
