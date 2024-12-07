@@ -173,7 +173,12 @@ os_update() {
 }
 
 os_install() { # $@=packages
-    $APT $@ &> $OUTPUT
+    $APT_INSTALL $@ &> $OUTPUT
+    return $?
+}
+
+os_uninstall() { # $@=packages
+    $APT_UNINSTALL $@ &> $OUTPUT
     return $?
 }
 
@@ -1050,9 +1055,18 @@ internal_load_global_config() {
     pm="${GLOBALS["PACKAGE_MANAGER"]}"
 
     case $pm in
-        "apt"|"apt-get"|"dnf"|"yum"|"zypper"|"pacman"|"snap") APT="sudo $pm install -y";;
-        "brew") APT="$pm install";;
-        "setup-x86_64.exe") APT="$pm -q -P";;
+        "apt"|"apt-get"|"dnf"|"yum"|"zypper"|"pacman"|"snap")
+            APT_INSTALL="sudo $pm install -y"
+            APT_UNINSTALL="sudo $pm remove -y"
+            ;;
+        "brew")
+            APT_INSTALL="$pm install"
+            APT_UNINSTALL="$pm uninstall"
+            ;;
+        "setup-x86_64.exe")
+            APT_INSTALL="$pm -q -P"
+            APT_UNINSTALL="$pm -q -X"
+            ;;
         *)
             echo "Unsupported package manager: $pm"
             return 1
@@ -1358,16 +1372,15 @@ cmd_uninstall_packages() { # $2..=packages
     local start_time=$(date_now)
 
     for package_name in "$@"; do
-        package_line=$(grep -m 1 "  $package_name:" "$CONFIG_PATH")
+        package_line=$(internal_get_category_field_value "dependencies" "$package_name")
 
         if [ -z "$package_line" ]; then
             log_error "$package_name is not in the dependency list of this project."
             continue
         fi
 
-        packages=$(echo "$package_line" | awk -F': ' '{print $2}')
-        for package in $packages; do
-            if sudo apt-get remove -y $package &> $OUTPUT; then 
+        for package in $package_line; do
+            if os_uninstall $package &> $OUTPUT; then 
                 echo "$package has been uninstalled from the computer."
                 package_count=$((package_count+1))
             else
@@ -1383,6 +1396,11 @@ cmd_uninstall_packages() { # $2..=packages
 cmd_remove_packages() { # $2..=packages
     ensure_inside_project
 
+    local confirm_uninstall_all=0
+    
+    [[ "$@" == *"-y"* ]] && confirm_uninstall_all=1 && set -- "${@//"-y"}"
+    [[ "$@" == *"-n"* ]] && confirm_uninstall_all=2 && set -- "${@//"-n"}"
+
     if [ -z "$2" ]; then
         echo "Usage: $COMMAND_NAME remove <package_name> [package_name...]"
         exit 1
@@ -1391,7 +1409,9 @@ cmd_remove_packages() { # $2..=packages
     shift
 
     for package_name in "$@"; do
-        if ! grep -q "  $package_name:" $CONFIG_PATH; then
+        local package_line=$(internal_get_category_field_value "dependencies" "$package_name")
+        
+        if [ -z "$package_line" ]; then
             log_error "$package_name is not in the dependency list of this project."
             continue
         fi
@@ -1399,9 +1419,20 @@ cmd_remove_packages() { # $2..=packages
         sed -i "/  $package_name:/d" $CONFIG_PATH
         echo "$package_name has been removed from the project."
 
-        local uninstall
-        read -p "Do you also want to uninstall $package_name from the computer? (y/N): " uninstall
-        [[ $uninstall =~ ^[Yy]$ ]] && cmd_uninstall_packages "u" $package_name
+        if [ $confirm_uninstall_all -eq 2 ]; then
+            continue
+        fi
+
+        if [ $confirm_uninstall_all -eq 1 ]; then
+            os_uninstall $package_line
+            continue
+        fi
+
+        for package in $package_line; do
+            local uninstall
+            read -p "Do you also want to uninstall $package from the computer? (y/N): " uninstall
+            [[ $uninstall =~ ^[Yy]$ ]] && os_uninstall $package
+        done
     done
 }
 
@@ -1609,7 +1640,7 @@ cmd_set_global_config() {
 
 cmd_infos() {
     echo "$OS - $DISTRO $VERSION"
-    echo "$APT"
+    echo "$APT_INSTALL"
     cmd_get_version
 }
 
@@ -1644,7 +1675,7 @@ declare -A GLOBALS=()
 
 OS=""
 DISTRO=""
-APT=""
+APT_INSTALL=""
 PREFERENCE_PATH=""
 
 # Colors
