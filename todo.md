@@ -1,2 +1,1 @@
-- nf list buggy, first line ghost
 - missing "-y" and "-n" to a command to respect the specs (readme)`

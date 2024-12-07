@@ -52,8 +52,9 @@ is_command_available() {
 }
 
 set_project_path() {
-    PROJECT_PATH="$1"
-    CONFIG_PATH="$PROJECT_PATH/$CONFIG_FILE"
+    s=$([[ "$1" == */ ]] && echo "" || echo "/")
+    PROJECT_PATH="$1$s"
+    CONFIG_PATH="$PROJECT_PATH$CONFIG_FILE"
 }
 
 # -----------------------------------------------------------
@@ -141,19 +142,25 @@ ensure_valid_mode() {
 # functions that is "sudo apt-get update &> $OUTPUT"
 # but for each package manager that exist following the 
 os_update() {
+    local cmd
+
     case "${GLOBALS["PACKAGE_MANAGER"]}" in
-        "apt"|"apt-get") sudo apt-get update &> $OUTPUT;;
-        "brew") brew update &> $OUTPUT;;
-        "cygwin") pacman -Sy &> $OUTPUT;;
-        "msys") pacman -Sy &> $OUTPUT;;
-        "dnf") sudo dnf check-update &> $OUTPUT;;
-        "zypper") sudo zypper refresh &> $OUTPUT;;
-        "pacman") sudo pacman -Sy &> $OUTPUT;;
+        "apt"|"apt-get") cmd="sudo apt-get update";;
+        "brew") cmd="brew update";;
+        "cygwin") cmd="pacman -Sy";;
+        "msys") cmd="pacman -Sy";;
+        "dnf") cmd="sudo dnf check-update";;
+        "zypper") cmd="sudo zypper refresh";;
+        "pacman") cmd="sudo pacman -Sy";;
     esac
+
+    cmd &> $OUTPUT
+    return $?
 }
 
 os_install() { # $@=packages
     $APT $@ &> $OUTPUT
+    return $?
 }
 
 # used to know if a command is installed
@@ -161,15 +168,20 @@ os_install() { # $@=packages
 # in contrast with `command -v $1`, this function is
 # to check the existence of a command, not a package
 os_find() { # $1=package
+    local cmd
+
     case $DISTRO in
-        "macOS") brew list $1 &> $OUTPUT;;
-        "Cygwin") cygcheck -c $1 &> $OUTPUT;;
-        "Msys") pacman -Q $1 &> $OUTPUT;;
-        "Debian") dpkg -s $1 &> $OUTPUT;;
-        "Red Hat") rpm -q $1 &> $OUTPUT;;
-        "SUSE") rpm -q $1 &> $OUTPUT;;
-        "Arch") pacman -Q $1 &> $OUTPUT;;
+        "macOS") cmd="brew list $1";;
+        "Cygwin") cmd="cygcheck -c $1";;
+        "Msys") cmd="pacman -Q $1";;
+        "Debian") cmd="dpkg -s $1";;
+        "Red Hat") cmd="rpm -q $1";;
+        "SUSE") cmd="rpm -q $1";;
+        "Arch") cmd="pacman -Q $1";;
     esac
+
+    $cmd &> /dev/null
+    return $?
 }
 
 os_fetch_file_content() {
@@ -177,8 +189,9 @@ os_fetch_file_content() {
         log_error "curl is required to fetch the file content."
         exit 1
     fi
-    # should be available on all platforms
+    # should be available or easily installed on all platforms
     curl -s $1
+    return $?
 }
 
 # -----------------------------------------------------------
@@ -429,7 +442,7 @@ internal_install_package() { # $1=package to install
 
     if [ $? -ne 0 ]; then
         log_error "Failed to install $1."
-        return -1
+        return 2
     fi
 
     echo "$1 has been installed on the computer."
@@ -967,10 +980,10 @@ internal_set_global_config() { # $1=key, $2=value
 
     # find the key and edit its value or insert it if not found
     # config file always exists so don't check its existence
-    if grep -q "^$1=" "$CONFIG_PATH"; then
-        sed -i "s/^$1=.*/$1=$2/" "$CONFIG_PATH"
+    if grep -q "^$1=" "$config_file"; then
+        sed -i "s/^$1=.*/$1=$2/" "$config_file"
     else
-        echo "$1=$2" >> "$CONFIG_PATH"
+        echo "$1=$2" >> "$config_file"
     fi
 
     GLOBALS["$1"]="$2"
@@ -980,7 +993,7 @@ internal_load_global_config() {
     local config_file="$PREFERENCE_PATH/global"
     local first_execution=1
 
-    if [ -f "$CONFIG_PATH" ]; then
+    if [ -f "$config_file" ]; then
         first_execution=0
         # content looks like this :
         # KEY=VALUE
@@ -988,10 +1001,10 @@ internal_load_global_config() {
         # ...
         while IFS='=' read -r key value; do
             GLOBALS["$key"]="$value"
-        done < "$CONFIG_PATH"
+        done < "$config_file"
     else
         mkdir -p "$PREFERENCE_PATH"
-        touch "$CONFIG_PATH"
+        touch "$config_file"
     fi
 
     local pm
@@ -1007,18 +1020,18 @@ internal_load_global_config() {
         fi
 
         internal_set_global_config "PACKAGE_MANAGER" "$pm"
-        echo "$pm will be used as the package manager."
-        echo "To change it, use the command: $COMMAND_NAME global pm <package_manager>"
+        echo -e "${CLR_LGRAY}$pm will be used as the package manager."
+        echo -e "To change it, use the command: $COMMAND_NAME global pm <package_manager>${CLR_RESET}\n"
     fi
 
     pm="${GLOBALS["PACKAGE_MANAGER"]}"
 
     case $pm in
-        "apt"|"apt-get"|"dnf"|"yum"|"zypper"|"pacman"|"snap") APT="sudo $APT install -y";;
-        "brew") APT="brew install";;
-        "setup-x86_64.exe") APT="setup-x86_64.exe -q -P";;
+        "apt"|"apt-get"|"dnf"|"yum"|"zypper"|"pacman"|"snap") APT="sudo $pm install -y";;
+        "brew") APT="$pm install";;
+        "setup-x86_64.exe") APT="$pm -q -P";;
         *)
-            echo "Unsupported package manager: $APT"
+            echo "Unsupported package manager: $pm"
             return 1
             ;;
     esac
@@ -1077,9 +1090,10 @@ cmd_new_project() {
         shift
     done
 
+    [ -z "$path" ] && path="."
     [[ ! "$path" =~ ^(\.|\/) ]] && path="./$path"
 
-    CONFIG_FILE="$path/project.yml"
+    set_project_path "$path"
     
     if [ -f "$CONFIG_PATH" ]; then
         log_error "A project is already initialized in this directory."
@@ -1110,9 +1124,8 @@ cmd_new_project() {
     ensure_valid_mode "$mode"
     ensure_valid_language_version "$lang" "$lang_version"
 
-    mkdir -p "$path" || { log_error "Failed to create the project directory."; exit 1; }
+    mkdir -p "$PROJECT_PATH" || { log_error "Failed to create the project directory."; exit 1; }
 
-    set_project_path "$path"
     internal_create_project_config "$name" $mode "$lang" $lang_version "$guard"
 
     log_success "New project initialized !\n"
@@ -1156,7 +1169,7 @@ cmd_install_all_packages() {
             internal_install_package $package
             installStatus=$?
             [ $installStatus -eq 1 ] && installed_success_count=$((installed_success_count+1))
-            [ $installStatus -eq -1 ] && installed_failed_count=$((installed_failed_count+1))
+            [ $installStatus -eq 2 ] && installed_failed_count=$((installed_failed_count+1))
         done
     done < "$CONFIG_PATH"
 
@@ -1218,9 +1231,9 @@ cmd_add_package() { # $1=dependency name, $2..=packages
         local r=$?
 
         [ $r -eq 1 ] && installed_success_count=$((installed_success_count+1))
-        [ $r -eq -1 ] && installed_failed_count=$((installed_failed_count+1))
+        [ $r -eq 2 ] && installed_failed_count=$((installed_failed_count+1))
 
-        if [ $r -ne -1 ]; then
+        if [ $r -ne 2 ]; then
             new_packages+=($package)
             added_count=$((added_count+1))
             echo "$package added."
@@ -1329,7 +1342,7 @@ cmd_list_packages() {
     /^[[:space:]]*#/ { next }
     /^dependencies:/ { in_dependencies = 1; next }
     in_dependencies && /^[^ ]/ { in_dependencies = 0 }
-    in_dependencies {
+    in_dependencies && NF {
         split($0, arr, ": ")
         key = arr[1]
         values = arr[2]
@@ -1396,10 +1409,7 @@ cmd_change_project_configuration() { # $2=key, $3=value
     ensure_inside_project
     internal_load_config
 
-    key=$2
-    shift 2
-    value=$@
-
+    shift
     local key=$1
     shift
     local value=$@
@@ -1690,7 +1700,7 @@ case $1 in
     --version|-V) cmd_get_version;;
     --update|-U) cmd_update_script;;
 
-    infos|infos) cmd_infos;;
+    info|infos) cmd_infos;;
     global) cmd_set_global_config $@;;
 
 # Project management
