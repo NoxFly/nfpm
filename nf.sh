@@ -57,6 +57,20 @@ set_project_path() {
     CONFIG_PATH="$PROJECT_PATH$CONFIG_FILE"
 }
 
+get_colored_mode() {
+    local m="${X_SUBMODE^^}"
+    local c
+
+    case $m in
+        "DEV") c="${CLR_BGREEN}";;
+        "DEBUG") c="${CLR_BORANGE}";;
+        "RELEASE") c="${CLR_BRED}";;
+        *) c="${CLR_RESET}";;
+    esac
+
+    echo -e "${c}${m}${CLR_RESET}"
+}
+
 # -----------------------------------------------------------
 # ------------------------- GUARDS --------------------------
 # -----------------------------------------------------------
@@ -832,6 +846,8 @@ internal_cmake_content() {
 
 
 internal_prepare_build_run() {
+    [ ! -z "$PREPARED" ] && return 0
+
     PREPARED="1"
 
     X_EXECUTABLE=$(capitalize "$P_NAME")
@@ -842,7 +858,9 @@ internal_prepare_build_run() {
     local hasClean=0
     local hasMode=0
 
-    while [ $# > 0 ]; do
+    local other_args=""
+
+    while (( $# > 0 )); do
         case "$1" in
             "-d"|"-g"|"-r"|"--dev"|"--debug"|"--release")
                 [[ hasMode -ne 0 ]] && continue
@@ -863,14 +881,14 @@ internal_prepare_build_run() {
                 ;;
 
             "-f"|"--force") hasClean=1;;
+
+            *) other_args="$other_args $1";;
         esac
 
         shift
     done
 
     [ -z "$X_RULE" ] && X_RULE="build"
-
-    [[ hasClean -eq 1 && -f "Makefile" ]] && make clear &> $OUTPUT
 
     case "$OSTYPE" in
         "linux"*)                X_PRGM_EXT=""      X_OS="LINUX";;
@@ -881,7 +899,12 @@ internal_prepare_build_run() {
     [ ! -z "$X_OS" ] && X_MACRO="-D$X_OS"
     X_MACRO="$X_MACRO -D${X_MODE^^}"
 
-    [[ hasClean -eq 1 && -f "Makefile" ]] && make clear &> $OUTPUT
+    if [[ hasClean -eq 1 && -f "$P_BUILD_DIR/Makefile" ]]; then
+        make -C $P_BUILD_DIR clear &> /dev/null
+        log_success "Project cleaned."
+    fi
+
+    EXE_ARGUMENTS="$other_args"
 }
 
 internal_set_default_init_lang() {
@@ -1055,6 +1078,71 @@ internal_find_package_manager() {
 internal_configure_os() {
     internal_get_distro_base
     internal_load_global_config
+}
+
+internal_compile() {
+    ensure_project_structure;
+
+    internal_prepare_build_run $@
+
+    if ! is_command_available "cmake"; then
+        log_error "cmake is required to compile the project."
+        return 1
+    fi
+
+    if ! is_command_available "make"; then
+        log_error "make is required to compile the project."
+        return 1
+    fi
+
+    local lib=$([[ "$X_RULE" =~ ^(static|shared)$ ]] && echo "-D \"LIB=${X_MODE^^}\"" || echo "")
+    local start_time=$(date_now)
+
+    local c="cmake -S . -B $P_BUILD_DIR \
+        $lib\
+        -D \"${X_MODE^^}=1\" \
+        -D \"PGNAME=$X_EXECUTABLE\" \
+        -D \"SRCDIR=$P_SRC_DIR\" \
+        -D \"INCDIR=$P_INC_DIR\" \
+        -D \"OUT=$P_OUT_DIR\" \
+        -D \"BUILDDIR=$P_BUILD_DIR\" \
+        -D \"LANGVERSION=$P_LANG_VERSION\" \
+        -D \"SRCEXT=$P_SRC_EXT\" \
+        -D \"HDREXT=$P_HDR_EXT\" \
+        -D \"OS=$X_OS\" \
+        -D \"MACRO=$X_MACRO\" &> $OUTPUT"
+
+    # echo c but replaces multiple spaces with one space
+    echo -e "${CLR_LGRAY}$(echo $c | sed 's/ \+/ /g')${CLR_RESET}" &> $OUTPUT
+    eval $c
+
+    local cmake_result=$?
+    local cmake_duration=$(get_formatted_duration $start_time)
+
+    if [ $cmake_result -ne 0 ]; then
+        log_error "Generating Makefile failed in $cmake_duration (code $cmake_result)"
+        return 1
+    fi
+
+    log_success "Makefile generated in $cmake_duration" &> $OUTPUT
+
+    middle_time=$(date_now)
+
+    make -C $P_BUILD_DIR &> $OUTPUT
+
+    local make_result=$?
+    local make_duration=$(get_formatted_duration $middle_time)
+    local total_time=$(get_formatted_duration $start_time)
+
+    if [ $make_result -ne 0 ]; then
+        log_error "Compilation failed in $make_duration (code $make_result)"
+        return 1
+    fi
+
+    log_success "Compilation succeed in $make_duration" &> $OUTPUT
+    echo -e "${CLR_DGRAY}Total compilation time : $total_time${CLR_RESET}"
+
+    return 0
 }
 
 
@@ -1434,74 +1522,18 @@ cmd_change_project_configuration() { # $2=key, $3=value
 }
 
 cmd_compile() {
-    ensure_project_structure;
-
-    if ! is_command_available "cmake"; then
-        log_error "cmake is required to compile the project."
-        exit 1
-    fi
-
-    if ! is_command_available "make"; then
-        log_error "make is required to compile the project."
-        exit 1
-    fi
-
-    [ -z "$PREPARED" ] && internal_prepare_build_run $@
-
-    local lib=$([[ "$X_RULE" =~ ^(static|shared)$ ]] && echo "-D \"LIB=${X_MODE^^}\" \\n" || echo "")
-    local start_time=$(date_now)
-
-    cmake -S . -B $P_BUILD_DIR \
-        $lib
-        -D \"${X_MODE^^}=1\" \
-        -D \"PGNAME=$X_EXECUTABLE\" \
-        -D \"SRCDIR=$P_SRC_DIR\" \
-        -D \"INCDIR=$P_INC_DIR\" \
-        -D \"OUT=$P_OUT_DIR\" \
-        -D \"BUILDDIR=$P_BUILD_DIR\" \
-        -D \"LANGVERSION=$P_LANG_VERSION\" \
-        -D \"SRCEXT=$P_SRC_EXT\" \
-        -D \"HDREXT=$P_HDR_EXT\" \
-        -D \"OS=$X_OS\" \
-        -D \"MACRO=$X_MACRO\" \
-        -D \"VERBOSE=$VERBOSE\" &> $OUTPUT
-
-    local cmake_result=$?
-    local cmake_duration=$(get_formatted_duration $start_time)
-
-    if [ $cmake_result -ne 0 ]; then
-        log_error "Generating Makefile failed in $duration"
-        exit 1
-    fi
-
-    log_success "Makefile generated in $cmake_duration"
-
-    middle_time=$(date_now)
-
-    make -C $P_BUILD_DIR &> $OUTPUT
-
-    local make_result=$?
-    local make_duration=$(get_formatted_duration $middle_time)
-    local total_time=$(get_formatted_duration $start_time)
-
-    if [ $make_result -ne 0 ]; then
-        log_error "Compilation failed in $make_duration"
-        exit 1
-    fi
-
-    log_success "Compilation succeed in $make_duration"
-    echo -e "${CLR_DGRAY}Total compilation time : $total_time${CLR_RESET}"
-
-    exit 0
+    shift
+    internal_compile $@
+    exit $?
 }
 
 cmd_run() { # $@=args
     ensure_project_structure;
 
-    [ -z "$PREPARED" ] && internal_prepare_build_run $@
+    shift
 
     echo -e -n "${CLR_DGRAY}"
-    $(cmd_compile) &> $OUTPUT
+    internal_compile $@
     local res=$?
     echo -e -n "${CLR_RESET}"
 
@@ -1510,18 +1542,23 @@ cmd_run() { # $@=args
     [ $RUN_AFTER_COMPILE -eq 0 ] && exit 0
 
     echo
-    log "--------------- Executing ${X_SUBMODE^^} mode ---------------\n\n"
+    local border="${CLR_DGRAY}---------------${CLR_RESET}"
+    log "$border Executing $(get_colored_mode) mode $border\n\n"
 
     cd "$P_OUT_DIR/"
 
-    if [ "$X_SUBMODE" == "debug" ] && ! is_command_available gdb; then
+    if [ "$X_SUBMODE" == "debug" ] && ! is_command_available "gdb"; then
         log_error "gdb is required to run the program in debug mode."
         exit 1
     fi
 
+    local exe="$PROJECT_PATH$X_EXECUTABLE$X_PRGM_EXT"
+
+    echo "exe: '$exe'"
+
     [ "$X_SUBMODE" == "debug" ]\
-        && gdb $PROJECT_PATH$X_EXECUTABLE$X_PRGM_EXT $@\
-        || $PROJECT_PATH$X_EXECUTABLE$X_PRGM_EXT $@
+        && gdb $exe\
+        || $exe $EXE_ARGUMENTS
 
     echo
 }
@@ -1613,9 +1650,14 @@ PREFERENCE_PATH=""
 # Colors
 CLR_RESET="\033[0m"
 CLR_RED="\033[0;31m"
+CLR_ORANGE="\033[0;33m"
 CLR_GREEN="\033[0;32m"
 CLR_DGRAY="\033[0;90m"
 CLR_LGRAY="\033[0;37m"
+# bold
+CLR_BRED="\033[1;31m"
+CLR_BGREEN="\033[1;32m"
+CLR_BORANGE="\033[1;33m"
 
 #
 BRAND="
