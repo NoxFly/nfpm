@@ -953,10 +953,7 @@ internal_prepare_build_run() {
     [ ! -z "$X_OS" ] && X_MACRO="-D$X_OS"
     X_MACRO="$X_MACRO -D${X_MODE^^}"
 
-    if [[ hasClean -eq 1 && -f "$P_BUILD_DIR/Makefile" ]]; then
-        make -C $P_BUILD_DIR clear &> /dev/null
-        log_success "Project cleaned."
-    fi
+    [[ hasClean -eq 1 && -f "$P_BUILD_DIR/Makefile" ]] && cmd_clean_project
 
     EXE_ARGUMENTS="$other_args"
 }
@@ -1635,7 +1632,7 @@ cmd_run() { # $@=args
         exit 1
     fi
 
-    local exe="$PROJECT_PATH$X_EXECUTABLE$X_PRGM_EXT"
+    local exe="./$X_EXECUTABLE$X_PRGM_EXT"
 
     echo "exe: '$exe'"
 
@@ -1648,6 +1645,7 @@ cmd_run() { # $@=args
 
 cmd_clean_project() {
     ensure_project_structure
+    make -C $P_BUILD_DIR clear &> /dev/null
     [ -d "$P_BUILD_DIR" ] && rm -r "$P_BUILD_DIR"/*
     echo "Project cleaned."
 }
