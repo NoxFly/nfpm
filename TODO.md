@@ -1,0 +1,1 @@
+- missing the migration of the makefile to the cmake for shared/static lib generation.
