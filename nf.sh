@@ -1634,8 +1634,6 @@ cmd_run() { # $@=args
 
     local exe="./$X_EXECUTABLE$X_PRGM_EXT"
 
-    echo "exe: '$exe'"
-
     [ "$X_SUBMODE" == "debug" ]\
         && gdb $exe\
         || $exe $EXE_ARGUMENTS
