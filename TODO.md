@@ -1,1 +1,7 @@
-- missing the migration of the makefile to the cmake for shared/static lib generation.
+- adapt the bash to the new cmake for
+    - program macro
+    - other macros
+    - call cmake --build build --target <target> instead of make directly
+- add a `flags` section in the configuration file so user can customize the flags it wants
+    - move the -Werror, -Wall etc.. in it by default
+    - add pedentic / pedentic-errors ?
