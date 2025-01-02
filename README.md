@@ -12,7 +12,7 @@ with a lightweight configuration and use.
 
 ## Prerequisites
 
-For now, the use of this script only works in a Unix like environment.
+For now, the use of this script only works in a Unix like environment (Linux, MacOS, MingW, Cygwin, ...).
 However, once you generated the base of the project with the script, it will also create a CMake configuration, that'll can be used across OS and configurations.
 
 **Bash 4 is required for the script to work.**

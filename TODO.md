@@ -1,7 +1,2 @@
-- adapt the bash to the new cmake for
-    - program macro
-    - other macros
-    - call cmake --build build --target <target> instead of make directly
-- add a `flags` section in the configuration file so user can customize the flags it wants
-    - move the -Werror, -Wall etc.. in it by default
-    - add pedentic / pedentic-errors ?
+- make a project default to 1 solution, but can with configuration split and manage multiple sub-solutions in the same project.
+    - for instance, a part for core development of a library, and a part for testing, using that built library.

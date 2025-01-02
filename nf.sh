@@ -43,6 +43,10 @@ log_success() {
     echo -e "${CLR_GREEN}$@${CLR_RESET}"
 }
 
+warn() {
+    echo -e "${CLR_ORANGE}$@${CLR_RESET}"
+}
+
 capitalize() {
     echo "$1" | sed -r 's/(^| )([a-z])/\U\2/g' | tr -d ' '
 }
@@ -290,6 +294,7 @@ internal_load_config() {
     P_OUT_DIR="${PROJECT_PATH}bin"
     P_BUILD_DIR="${PROJECT_PATH}build"
     P_LIB_DIR="${PROJECT_PATH}libs"
+    P_FLAGS=$(internal_get_category_field_value "config" "flags")
 
     ensure_config_integrity
 
@@ -380,6 +385,8 @@ internal_create_project_config() { # $1=name, $2=mode, $3=language, $4=language 
     # create file first
     touch $CONFIG_PATH
 
+    flags=$(internal_get_lang_flags "$3")
+
     # categories
     internal_create_config_category "project"
     internal_set_category_field_value "project" "name" "$1"
@@ -394,8 +401,15 @@ internal_create_project_config() { # $1=name, $2=mode, $3=language, $4=language 
     internal_set_category_field_value "config" "type" "$3"
     internal_set_category_field_value "config" "${3}Version" $4
     internal_set_category_field_value "config" "guard" "$5" # ifndef | pragma
+    internal_set_category_field_value "config" "flags"  "$flags"
 
     internal_create_config_category "dependencies"
+}
+
+internal_get_lang_flags() {
+    case "$1" in
+        "c"|"cpp") echo "-Wall -Wextra";
+    esac
 }
 
 internal_create_base_project() {
@@ -900,25 +914,27 @@ internal_cmake_content() {
 
 
 internal_prepare_build_run() {
-    [ ! -z "$PREPARED" ] && return 0
+    [ ! -z "$X_PREPARED" ] && return 0
 
-    PREPARED="1"
+    X_PREPARED="1"
+
+    local has_clean=0
+    local has_mode=0
+
+    local other_args=""
+    local max_threads=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
 
     X_EXECUTABLE=$(capitalize "$P_NAME")
     X_MODE="debug"
     X_SUBMODE="dev"
-    X_RULE=""
-
-    local hasClean=0
-    local hasMode=0
-
-    local other_args=""
+    X_RULE="build"
+    X_THREADS=$((max_threads/2))
 
     while (( $# > 0 )); do
         case "$1" in
             "-d"|"-g"|"-r"|"--dev"|"--debug"|"--release")
-                [[ hasMode -ne 0 ]] && continue
-                hasMode=1
+                [[ has_mode -ne 0 ]] && continue
+                has_mode=1
 
                 case "$1" in
                     "-g"|"--debug")     X_MODE="debug"   X_SUBMODE="debug";;
@@ -928,13 +944,26 @@ internal_prepare_build_run() {
             ;;
 
             "--static"|"--shared")
-                [[ hasMode -ne 0 ]] && continue
-                hasMode=1
+                [[ has_mode -ne 0 ]] && continue
+                has_mode=1
                 X_RULE="${1:2}"
                 RUN_AFTER_COMPILE=0
                 ;;
 
-            "-f"|"--force") hasClean=1;;
+            "-f"|"--force") has_clean=1;;
+
+            "-t")
+                # if $2 is "max", then put max_threads-1 threads
+                # if $2 is "half", then put half of the max threads
+                # if $2 is a number, then put that number of threads
+                if [ "$2" == "max" ]; then
+                    X_THREADS=$((max_threads-1)) # keep one thread for UI or other tasks
+                elif [[ "$2" =~ ^[0-9]+$ ]]; then
+                    X_THREADS=$2
+                else
+                    warn "Invalid number of threads given. Using half as default."
+                fi
+                shift;;
 
             *) other_args="$other_args $1";;
         esac
@@ -942,18 +971,23 @@ internal_prepare_build_run() {
         shift
     done
 
-    [ -z "$X_RULE" ] && X_RULE="build"
-
     case "$OSTYPE" in
         "linux"*)                X_PRGM_EXT=""      X_OS="LINUX";;
         "darwin"*)               X_PRGM_EXT=".app"  X_OS="MACOS";;
         "cygwin"|"msys"|"win32") X_PRGM_EXT=".exe"  X_OS="WINDOWS";;
     esac
 
+    if [ $X_THREADS -gt $max_threads ]; then
+        X_THREADS=$((max_threads-1))
+        warn "The number of threads defined exceeds the maximum number of threads available ($max_threads). $X_THREADS threads will be used."
+    fi
+
+    [ $X_THREADS -lt 1 ] && X_THREADS=1
+
     [ ! -z "$X_OS" ] && X_MACRO="-D$X_OS"
     X_MACRO="$X_MACRO -D${X_MODE^^}"
 
-    [[ hasClean -eq 1 && -f "$P_BUILD_DIR/Makefile" ]] && cmd_clean_project
+    [[ has_clean -eq 1 && -f "$P_BUILD_DIR/Makefile" ]] && cmd_clean_project
 
     EXE_ARGUMENTS="$other_args"
 }
@@ -1057,7 +1091,7 @@ internal_set_global_config() { # $1=key, $2=value
     if grep -q "^$1=" "$config_file"; then
         sed -i "s/^$1=.*/$1=$2/" "$config_file"
     else
-        echo "$1=$2" >> "$config_file"
+       	echo "$1=$2" >> "$config_file"
     fi
 
     GLOBALS["$1"]="$2"
@@ -1145,7 +1179,7 @@ internal_compile() {
 
     internal_prepare_build_run $@
 
-    local required_commands=("cmake" "make")
+    local required_commands=("cmake")
 
     for cmd in "${required_commands[@]}"; do
         if ! is_command_available "$cmd" &&\
@@ -1157,9 +1191,8 @@ internal_compile() {
     local lib=$([[ "$X_RULE" =~ ^(static|shared)$ ]] && echo "-D \"LIB=${X_RULE^^}\"" || echo "")
     local start_time=$(date_now)
 
-    local c="cmake -S . -B $P_BUILD_DIR \
+    local prepare_cmd="cmake -S . -B $P_BUILD_DIR \
         $lib\
-        -D \"${X_MODE^^}=1\" \
         -D \"PGNAME=$X_EXECUTABLE\" \
         -D \"SRCDIR=$P_SRC_DIR\" \
         -D \"INCDIR=$P_INC_DIR\" \
@@ -1167,13 +1200,13 @@ internal_compile() {
         -D \"BUILDDIR=$P_BUILD_DIR\" \
         -D \"LANGVERSION=$P_LANG_VERSION\" \
         -D \"SRCEXT=$P_SRC_EXT\" \
-        -D \"HDREXT=$P_HDR_EXT\" \
-        -D \"OS=$X_OS\" \
-        -D \"MACRO=$X_MACRO\" &> $OUTPUT"
+		-D \"FLAGS=$P_FLAGS\" \
+        -D \"MACRO=$X_MACRO\" \
+	"
 
     # echo c but replaces multiple spaces with one space
-    echo -e "${CLR_LGRAY}$(echo $c | sed 's/ \+/ /g')${CLR_RESET}" &> $OUTPUT
-    eval $c
+    echo -e "${CLR_LGRAY}$(echo $prepare_cmd | sed 's/ \+/ /g')${CLR_RESET}" &> $OUTPUT
+    eval $prepare_cmd &> $OUTPUT
 
     local cmake_result=$?
     local cmake_duration=$(get_formatted_duration $start_time)
@@ -1187,7 +1220,10 @@ internal_compile() {
 
     middle_time=$(date_now)
 
-    make -C $P_BUILD_DIR &> $OUTPUT
+	local build_cmd="cmake --build $P_BUILD_DIR --target $X_RULE --config $(capitalize $X_MODE) --parallel $X_THREADS"
+
+	echo -e "${CLR_LGRAY}$build_cmd${CLR_RESET}" &> $OUTPUT
+	eval $build_cmd &> $OUTPUT
 
     local make_result=$?
     local make_duration=$(get_formatted_duration $middle_time)
@@ -1796,7 +1832,10 @@ build                                   Compile the project.
     --release           -r              Compile code and run it in release mode.
     --force             -f              Make clear before compiling again.
     --static                            Build the project as static library.
-    --shared                            Build the project as shared library."
+    --shared                            Build the project as shared library.
+                        -t              Compile the project with a specific number of threads (default to half of existing).
+                                        \"max\" to get the maximum minus 1 thread available.
+                                        A number to work with that number of threads."
 
 
 # -----------------------------------------------------------
