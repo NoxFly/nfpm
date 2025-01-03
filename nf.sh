@@ -860,7 +860,7 @@ internal_update_library_include() {
 
     mkdir -p $base_inc_path
 
-    rsync -avq --delete --prune-empty-dirs --include="*/" --include="*.{c,cpp,inl}" --exclude="*" "include/" "$base_inc_path"
+    rsync -avq --delete --prune-empty-dirs --include="*/" --include="*.$P_HDR_EXT" --include "*.inl" --exclude="*" "$P_INC_DIR/" "$base_inc_path"
 
     # 1st scan :
     # update file position
@@ -1655,7 +1655,7 @@ cmd_run() { # $@=args
     echo -e -n "${CLR_RESET}"
 
     [ $res -ne 0 ] && exit 1
-    # [ "$X_RULE" == "shared" ] && internal_update_library_include # TODO : check
+    [ "$X_RULE" == "shared" ] && internal_update_library_include
     [ $RUN_AFTER_COMPILE -eq 0 ] && exit 0
 
     local exe_dir="$P_OUT_DIR/$X_MODE"
