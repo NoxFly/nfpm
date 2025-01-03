@@ -299,6 +299,7 @@ internal_load_config() {
     P_FLAGS=$(internal_get_category_field_value "config" "flags")
 
     ensure_config_integrity
+    ensure_project_structure
 
     local ext_suffix=""
     [ "$P_LANG" == "cpp" ] && ext_suffix="pp"
@@ -436,6 +437,12 @@ internal_create_base_project() {
     create_file "$P_SRC_DIR/main.$P_SRC_EXT" "$(internal_get_main_code)"
     create_file "CMakeLists.txt" "$(internal_cmake_content)"
     create_file ".gitignore" "$(internal_get_gitignore_content)"
+
+    if [ "$DISTRO" == "Windows" ]; then
+        create_file "config.cmake" "# Added libraries for this project will show up here. You'll have to specify their location on your disk."
+    fi
+
+    [ $i -eq 0 ] && log "No changes made" || log "Done"
 
     internal_update_cmake_config
 
@@ -1035,6 +1042,9 @@ internal_set_default_package_manager() {
 internal_get_distro_base() {
     local r=0
 
+    OS=""
+    DISTRO=""
+
     if [[ "$(uname)" == "Darwin" ]]; then
         OS="MacOS"
         DISTRO="macOS"
@@ -1058,6 +1068,10 @@ internal_get_distro_base() {
             arch|manjaro) DISTRO="Arch";;
             *) r=1;;
         esac
+    elif [[ "$(uname -s)" == "Windows_NT" ]]; then
+        OS="Windows"
+        DISTRO="Windows"
+        PREFERENCE_PATH=~/AppData/Roaming/nfpm
     else
         r=1
     fi
@@ -1613,7 +1627,6 @@ cmd_patch_version() { # $2=patch|minor|major
 
 cmd_change_project_configuration() { # $2=key, $3=value
     ensure_inside_project
-    internal_load_config
 
     shift
     local key=$1
@@ -1646,8 +1659,6 @@ cmd_compile() {
 }
 
 cmd_run() { # $@=args
-    ensure_project_structure
-
     shift
 
     echo -e -n "${CLR_DGRAY}"
