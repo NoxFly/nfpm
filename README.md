@@ -57,7 +57,9 @@ nf build
 nf run
 ```
 
-The `init` command can take parameters to customize the project directly from the beginning.
+The `new` command can take parameters to customize the project directly from the beginning.
+
+If you wish to create a new nf project with already existing code structure, then running the `new` command will just create a `project.yml` and missing stuff.
 
 All the parameters are optional.
 
