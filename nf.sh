@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Author : NoxFly
-# Copyrights 2021-2024
+# Copyrights 2021-2025
 #
 #   \ |  __| _ \  \  |
 #  .  |  _|  __/ |\/ |
