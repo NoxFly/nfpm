@@ -314,6 +314,103 @@ internal_create_config_category() {
     fi
 }
 
+internal_has_category_key() { # $1=category, $2=key
+    r=$(awk -v cat="$1" -v key="$2" '
+    BEGIN { in_category = 0 }
+    /^[[:space:]]*#/ { next }
+    {
+        if ($0 ~ "^" cat ":") {
+            in_category = 1
+        } else if (in_category && $0 ~ "^[^ ]") {
+            in_category = 0
+        }
+        if (in_category && $0 ~ "^  " key ":") {
+            print "found"
+            exit
+        }
+    }
+    ' "$CONFIG_PATH")
+
+    [ -z "$r" ] && return 1 || return 0
+}
+
+internal_has_category_key_value() { # $1=category, $2=key, $3=value
+    r=(awk -v cat="$1" -v key="$2" -v value="$3" '
+    BEGIN { in_category = 0 }
+    /^[[:space:]]*#/ { next }
+    {
+        if ($0 ~ "^" cat ":") {
+            in_category = 1
+        } else if (in_category && $0 ~ "^[^ ]") {
+            in_category = 0
+        }
+        if (in_category && $0 ~ "^  " key ": " value) {
+            print "found"
+            exit
+        }
+    }
+    ' "$CONFIG_PATH")
+
+    [ -z "$r" ] && return 1 || return 0
+}
+
+internal_get_category_keys() { # $1=category
+    awk -v cat="$1" '
+    BEGIN { in_category = 0 }
+    /^[[:space:]]*#/ { next }
+    {
+        if ($0 ~ "^" cat ":") {
+            in_category = 1
+        } else if (in_category && $0 ~ "^[^ ]") {
+            in_category = 0
+        }
+        if (in_category && $0 ~ "^  ") {
+            split($0, arr, ": ")
+            print arr[1]
+        }
+    }
+    ' "$CONFIG_PATH"
+}
+
+internal_get_category_values() { # $1=category
+    awk -v cat="$1" '
+    BEGIN { in_category = 0 }
+    /^[[:space:]]*#/ { next }
+    {
+        if ($0 ~ "^" cat ":") {
+            in_category = 1
+        } else if (in_category && $0 ~ "^[^ ]") {
+            in_category = 0
+        }
+        if (in_category && $0 ~ "^  ") {
+            split($0, arr, ": ")
+            print arr[2]
+        }
+    }
+    ' "$CONFIG_PATH"
+}
+
+internal_remove_category_key() { # $1=category, $2=key
+    local temp_file=$(mktemp)
+
+    awk -v cat="$1" -v key="$2" '
+    BEGIN { in_category = 0 }
+    {
+        if ($0 ~ "^" cat ":") {
+            in_category = 1
+        } else if (in_category && $0 ~ "^[^ ]") {
+            in_category = 0
+        }
+        if (!(in_category && $0 ~ "^  " key ":")) {
+            print $0
+        }
+    }
+    ' "$CONFIG_PATH" > "$temp_file"
+
+    mv "$temp_file" "$CONFIG_PATH"
+    rm -f "$temp_file"
+}
+
 internal_set_category_field_value() { # $1=category, $2=field, $3=value
     if grep -q "^$1:" $CONFIG_PATH; then
         if grep -q "^  $2:" $CONFIG_PATH; then
@@ -917,7 +1014,7 @@ internal_get_gitignore_content() {
 }
 
 internal_cmake_content() {
-    local cmake_content="Y21ha2VfbWluaW11bV9yZXF1aXJlZChWRVJTSU9OIDMuMTIpCgpzZXQoUFJPSkVDVF9OQU1FICJUb3RvIikKCnByb2plY3QoIiR7UFJPSkVDVF9OQU1FfSIgVkVSU0lPTiAxLjAuMCBERVNDUklQVElPTiAiTm8gZGVzY3JpcHRpb24gcHJvdmlkZWQuIiBIT01FUEFHRV9VUkwgIiIgTEFOR1VBR0VTIENYWCkKCiMgaW5qZWN0YWJsZSB2YXJpYWJsZXMKc2V0KEJVSUxEX01PREUgInJlbGVhc2UiIENBQ0hFIFNUUklORyAiZGVidWcgb3IgcmVsZWFzZSIpCnNldChTUkNESVIgInNyYyIgQ0FDSEUgU1RSSU5HICJTb3VyY2UgZGlyZWN0b3J5IikKc2V0KElOQ0RJUiAiaW5jbHVkZSIgQ0FDSEUgU1RSSU5HICJJbmNsdWRlIGRpcmVjdG9yeSIpCnNldChPVVQgImJpbiIgQ0FDSEUgU1RSSU5HICJPdXRwdXQgZGlyZWN0b3J5IikKc2V0KEJVSUxERElSICJidWlsZCIgQ0FDSEUgU1RSSU5HICJCdWlsZCBkaXJlY3RvcnkiKQpzZXQoTEFOR1ZFUlNJT04gIjIwIiBDQUNIRSBTVFJJTkcgIkxhbmd1YWdlIHN0YW5kYXJkIHZlcnNpb24iKQpzZXQoU1JDRVhUICJjcHAiIENBQ0hFIFNUUklORyAiU291cmNlIGZpbGUgZXh0ZW5zaW9uIChjIG9yIGNwcCkiKQpzZXQoTUFDUk8gIiIgQ0FDSEUgU1RSSU5HICJNYWNybyBkZWZpbml0aW9ucyIpCnNldChGTEFHUyAiIiBDQUNIRSBTVFJJTkcgIkFkZGl0aW9uYWwgY29tcGlsaW5nIGZsYWdzIikKCmlmKCR7U1JDRVhUfSBTVFJFUVVBTCAiYyIpCiAgICBzZXQoQ01BS0VfQ19TVEFOREFSRCAke0xBTkdWRVJTSU9OfSkKICAgIHNldChDTUFLRV9DX0ZMQUdTICIke0NNQUtFX0NfRkxBR1N9ICR7RkxBR1N9IikKICAgIGVuYWJsZV9sYW5ndWFnZShDKQplbHNlKCkKICAgIHNldChDTUFLRV9DWFhfU1RBTkRBUkQgJHtMQU5HVkVSU0lPTn0pCiAgICBzZXQoQ01BS0VfQ1hYX0ZMQUdTICIke0NNQUtFX0NYWF9GTEFHU30gJHtGTEFHU30iKQogICAgZW5hYmxlX2xhbmd1YWdlKENYWCkKZW5kaWYoKQoKIyBpZiBTUkNESVIsIElOQ0RJUiwgT1VULCBCVUlMRERJUiBzdGFydCB3aXRoICIuLyIsIHJlbW92ZSBpdApmb3JlYWNoKERJUl9WQVIgU1JDRElSIElOQ0RJUiBPVVQgQlVJTERESVIpCiAgICBpZigkeyR7RElSX1ZBUn19IE1BVENIRVMgIl5cXC4vIikKICAgICAgICBzdHJpbmcoU1VCU1RSSU5HICR7JHtESVJfVkFSfX0gMiAtMSAke0RJUl9WQVJ9KQogICAgZW5kaWYoKQplbmRmb3JlYWNoKCkKCiMgcHJlZml4IGJ5IGFic29sdXRlIHBhdGggb2Ygd29ya3NwYWNlIGZvbGRlcgpzZXQoT1VUICR7Q01BS0VfU09VUkNFX0RJUn0vJHtPVVR9KQpzZXQoQlVJTERESVIgJHtDTUFLRV9TT1VSQ0VfRElSfS8ke0JVSUxERElSfSkKc2V0KFNSQ0RJUiAke0NNQUtFX1NPVVJDRV9ESVJ9LyR7U1JDRElSfSkKc2V0KElOQ0RJUiAke0NNQUtFX1NPVVJDRV9ESVJ9LyR7SU5DRElSfSkKCiMgZ2V0IGFsbCBzb3VyY2UgZmlsZXMKZmlsZShHTE9CX1JFQ1VSU0UgU09VUkNFUyAiJHtTUkNESVJ9LyouJHtTUkNFWFR9IikKCiMgZ2V0IGFsbCBpbmNsdWRlIGRpcmVjdG9yaWVzCmZpbGUoR0xPQl9SRUNVUlNFIEhFQURFUl9GSUxFUyAiJHtJTkNESVJ9LyouaCIgIiR7SU5DRElSfS8qLmhwcCIpCgpzZXQoSU5DTFVERV9ESVJTICIiKQpmb3JlYWNoKEhFQURFUl9GSUxFICR7SEVBREVSX0ZJTEVTfSkKICAgIGdldF9maWxlbmFtZV9jb21wb25lbnQoRElSICR7SEVBREVSX0ZJTEV9IERJUkVDVE9SWSkKICAgIGxpc3QoQVBQRU5EIElOQ0xVREVfRElSUyAke0RJUn0pCmVuZGZvcmVhY2goKQoKIyByZW1vdmUgZHVwbGljYXRlIGRpcmVjdG9yaWVzCmxpc3QoUkVNT1ZFX0RVUExJQ0FURVMgSU5DTFVERV9ESVJTKQoKaW5jbHVkZV9kaXJlY3Rvcmllcygke0lOQ0xVREVfRElSU30pCgppZihNQUNSTykKICAgIGZvcmVhY2goTSBJTiBMSVNUUyBNQUNSTykKICAgICAgICBhZGRfY29tcGlsZV9kZWZpbml0aW9ucygke019KQogICAgZW5kZm9yZWFjaCgpCmVuZGlmKCkKCmlmKEJVSUxEX1RZUEUgU1RSRVFVQUwgImJ1aWxkIikKICAgIHNldChFWEVDVVRBQkxFX09VVFBVVF9QQVRIICR7T1VUfS8ke0NNQUtFX0JVSUxEX1RZUEV9KSAjIFZTIHNwZWNpZmljCmVsc2VpZihCVUlMRF9UWVBFIFNUUkVRVUFMICJzaGFyZWQiKQogICAgc2V0KEVYRUNVVEFCTEVfT1VUUFVUX1BBVEggJHtPVVR9L2xpYikgIyBWUyBzcGVjaWZpYwplbHNlaWYoQlVJTERfVFlQRSBTVFJFUVVBTCAic3RhdGljIikKICAgIHNldChFWEVDVVRBQkxFX09VVFBVVF9QQVRIICR7T1VUfS9saWIpICMgVlMgc3BlY2lmaWMKZW5kaWYoKQoKc2V0KENNQUtFX1JVTlRJTUVfT1VUUFVUX0RJUkVDVE9SWSAke0VYRUNVVEFCTEVfT1VUUFVUX1BBVEh9KQoKIyBDcmVhdGUgdGhlICJiaW4vIiBkaXJlY3RvcnkgaWYgaXQgZG9lc24ndCBleGlzdApmaWxlKE1BS0VfRElSRUNUT1JZICR7RVhFQ1VUQUJMRV9PVVRQVVRfUEFUSH0pCgojIFZTIHNwZWNpZmljCmlmKE1TVkMpCiAgICAjIExvYWQgY29uZmlndXJhdGlvbiBmaWxlCiAgICBpbmNsdWRlKGNvbmZpZy5jbWFrZSBPUFRJT05BTCkKCiAgICBpZihDTUFLRV9CVUlMRF9UWVBFIFNUUkVRVUFMICJEZWJ1ZyIpCiAgICAgICAgc2V0KENPTkZJR1VSQVRJT05fRElSICJ4NjQtZGVidWciKQogICAgZWxzZSgpCiAgICAgICAgc2V0KENPTkZJR1VSQVRJT05fRElSICJ4NjQtcmVsZWFzZSIpCiAgICBlbmRpZigpCgogICAgIyBBZGQgYSBjdXN0b20gY29tbWFuZCB0byBjb3B5IHRoZSBleGVjdXRhYmxlIGFmdGVyIGJ1aWxkLCBvbmx5IGZvciBWaXN1YWwgU3R1ZGlvCiAgICBhZGRfY3VzdG9tX2NvbW1hbmQoCiAgICAgICAgVEFSR0VUICR7UFJPSkVDVF9OQU1FfSBQT1NUX0JVSUxECiAgICAgICAgQ09NTUFORCAke0NNQUtFX0NPTU1BTkR9IC1FIGNvcHkKICAgICAgICAgICAgICAgICQ8VEFSR0VUX0ZJTEU6JHtQUk9KRUNUX05BTUV9PgogICAgICAgICAgICAgICAgJHtFWEVDVVRBQkxFX09VVFBVVF9QQVRIfS8ke0NPTkZJR1VSQVRJT05fRElSfQogICAgICAgIENPTU1FTlQgIkNvcHlpbmcgZXhlY3V0YWJsZSB0byBiaW4gZm9sZGVyIgogICAgKQoKICAgICMgU2V0IHRoZSBwcm9wZXJ0eSB0byB1c2Ugd2l0aCBNU0J1aWxkCiAgICBzZXRfcHJvcGVydHkoRElSRUNUT1JZIFBST1BFUlRZIFZTX1NUQVJUVVBfUFJPSkVDVCAiJHtQUk9KRUNUX05BTUV9IikKCiAgICAjIFRPRE8KICAgICMgU2V0IGRlZmF1bHQgcGF0aHMgaWYgbm90IGRlZmluZWQgYnkgdGhlIGNvbmZpZyBmaWxlCiAgICBzZXQoQV9JTkNMVURFX0RJUiAkRU5We0FfSU5DTFVERV9ESVJ9IENBQ0hFIFBBVEggIlBhdGggdG8gQSBpbmNsdWRlIGRpcmVjdG9yeSIgRk9SQ0UpCgogICAgIyBTZXQgZGVmYXVsdCBwYXRocyBpZiBub3QgZGVmaW5lZCBieSB0aGUgY29uZmlnIGZpbGUKICAgIHNldChBX0xJQlJBUllfREVCVUcgJEVOVntBX0xJQlJBUllfREVCVUd9IENBQ0hFIEZJTEVQQVRIICJQYXRoIHRvIEEgbGlicmFyeSBmb3IgRGVidWciIEZPUkNFKQogICAgCiAgICAjIExpbmsgYWdhaW5zdCB0aGUgZXh0ZXJuYWwgbGlicmFyaWVzCiAgICAjIFVzZSBnZW5lcmF0b3IgZXhwcmVzc2lvbnMgdG8gc2V0IHRoZSBsaWJyYXJ5IGRpcmVjdG9yaWVzIGJhc2VkIG9uIGNvbmZpZ3VyYXRpb24KICAgIHRhcmdldF9saW5rX2xpYnJhcmllcygke1BST0pFQ1RfTkFNRX0gUFJJVkFURQogICAgICAgICQ8JDxDT05GSUc6RGVidWc+OiR7QV9MSUJSQVJZX0RFQlVHfTske0JfTElCUkFSWX0+CiAgICAgICAgJDwkPENPTkZJRzpSZWxlYXNlPjoke0FfTElCUkFSWV9SRUxFQVNFfTske0JfTElCUkFSWX0+CiAgICApCgplbHNlKCkKICAgICMgVE9ETyA6IG1hbmFnZSBsaWJyYXJpZXMgdG8gaW5jbHVkZSBoZXJlIGluIHVuaXgtbGlrZSBzeXN0ZW1zCmVuZGlmKCkKCgojIHNwZWNpZmljIGJ1aWxkIHR5cGUgY29uZmlnIC0gdGFyZ2V0cwoKaWYoQlVJTERfVFlQRSBTVFJFUVVBTCAiYnVpbGQiKQogICAgYWRkX2V4ZWN1dGFibGUoJHtQUk9KRUNUX05BTUV9ICR7U09VUkNFU30pCgogICAgc2V0X3RhcmdldF9wcm9wZXJ0aWVzKCR7VEFSR0VUfSBQUk9QRVJUSUVTCiAgICAgICAgUlVOVElNRV9PVVRQVVRfRElSRUNUT1JZICR7Q01BS0VfUlVOVElNRV9PVVRQVVRfRElSRUNUT1JZfQogICAgKQoKICAgIGluc3RhbGwoVEFSR0VUUyAke1BST0pFQ1RfTkFNRX0gREVTVElOQVRJT04gJHtDTUFLRV9SVU5USU1FX09VVFBVVF9ESVJFQ1RPUll9KQoKICAgIGFkZF9jdXN0b21fdGFyZ2V0KGJ1aWxkCiAgICAgICAgQ09NTUFORCAke0NNQUtFX0NPTU1BTkR9IC0tYnVpbGQgJHtDTUFLRV9CSU5BUllfRElSfSAtLXRhcmdldCAke1BST0pFQ1RfTkFNRX0KICAgICAgICBDT01NRU5UICJCdWlsZGluZyBleGVjdXRhYmxlIgogICAgKQoKCmVsc2VpZihCVUlMRF9UWVBFIFNUUkVRVUFMICJzaGFyZWQiKQogICAgYWRkX2xpYnJhcnkoJHtQUk9KRUNUX05BTUV9IFNIQVJFRCAke1NPVVJDRVN9KQoKICAgIHNldF90YXJnZXRfcHJvcGVydGllcygke1BST0pFQ1RfTkFNRX0gUFJPUEVSVElFUwogICAgICAgIExJQlJBUllfT1VUUFVUX0RJUkVDVE9SWSAke0NNQUtFX0xJQlJBUllfT1VUUFVUX0RJUkVDVE9SWX0KICAgICkKCiAgICBpbnN0YWxsKFRBUkdFVFMgJHtQUk9KRUNUX05BTUV9IERFU1RJTkFUSU9OICR7Q01BS0VfTElCUkFSWV9PVVRQVVRfRElSRUNUT1JZfSkKCiAgICBhZGRfY3VzdG9tX3RhcmdldChzaGFyZWQKICAgICAgICBDT01NQU5EICR7Q01BS0VfQ09NTUFORH0gLS1idWlsZCAke0NNQUtFX0JJTkFSWV9ESVJ9IC0tdGFyZ2V0ICR7UFJPSkVDVF9OQU1FfQogICAgICAgIENPTU1FTlQgIkJ1aWxkaW5nIHNoYXJlZCBsaWJyYXJ5IgogICAgKQoKCmVsc2VpZihCVUlMRF9UWVBFIFNUUkVRVUFMICJzdGF0aWMiKQogICAgYWRkX2xpYnJhcnkoJHtQUk9KRUNUX05BTUV9IFNUQVRJQyAke1NPVVJDRVN9KQoKICAgIHNldF90YXJnZXRfcHJvcGVydGllcygke1RBUkdFVH0gUFJPUEVSVElFUwogICAgICAgIEFSQ0hJVkVfT1VUUFVUX0RJUkVDVE9SWSAke0NNQUtFX0FSQ0hJVkVfT1VUUFVUX0RJUkVDVE9SWX0KICAgICkKCiAgICBpbnN0YWxsKFRBUkdFVFMgJHtQUk9KRUNUX05BTUV9IERFU1RJTkFUSU9OICR7Q01BS0VfQVJDSElWRV9PVVRQVVRfRElSRUNUT1JZfSkKCiAgICBhZGRfY3VzdG9tX3RhcmdldChzdGF0aWMKICAgICAgICBDT01NQU5EICR7Q01BS0VfQ09NTUFORH0gLS1idWlsZCAke0NNQUtFX0JJTkFSWV9ESVJ9IC0tdGFyZ2V0ICR7UFJPSkVDVF9OQU1FfQogICAgICAgIENPTU1FTlQgIkJ1aWxkaW5nIHN0YXRpYyBsaWJyYXJ5IgogICAgKQoKZW5kaWYoKQoKYWRkX2N1c3RvbV90YXJnZXQoY2xlYXIKICAgIENPTU1BTkQgJHtDTUFLRV9DT01NQU5EfSAtRSBlY2hvICJCdWlsZCBkaXJlY3RvcnkgY2xlYXJlZCIKKQo="
+    local cmake_content="IyBETyBOT1QgRURJVCBUSElTIEZJTEUKIyBUaGlzIGZpbGUgaXMgZ2VuZXJhdGVkIGFuZCBtYW5hZ2VkIGJ5IE5GUE0KCmNtYWtlX21pbmltdW1fcmVxdWlyZWQoVkVSU0lPTiAzLjEyKQoKc2V0KFBST0pFQ1RfTkFNRSAiVG90byIpCgpwcm9qZWN0KCIke1BST0pFQ1RfTkFNRX0iIFZFUlNJT04gMS4wLjAgREVTQ1JJUFRJT04gIk5vIGRlc2NyaXB0aW9uIHByb3ZpZGVkLiIgSE9NRVBBR0VfVVJMICIiIExBTkdVQUdFUyBDWFgpCgojIGluamVjdGFibGUgdmFyaWFibGVzCnNldChCVUlMRF9NT0RFICJyZWxlYXNlIiBDQUNIRSBTVFJJTkcgImRlYnVnIG9yIHJlbGVhc2UiKQpzZXQoU1JDRElSICJzcmMiIENBQ0hFIFNUUklORyAiU291cmNlIGRpcmVjdG9yeSIpCnNldChJTkNESVIgImluY2x1ZGUiIENBQ0hFIFNUUklORyAiSW5jbHVkZSBkaXJlY3RvcnkiKQpzZXQoT1VUICJiaW4iIENBQ0hFIFNUUklORyAiT3V0cHV0IGRpcmVjdG9yeSIpCnNldChCVUlMRERJUiAiYnVpbGQiIENBQ0hFIFNUUklORyAiQnVpbGQgZGlyZWN0b3J5IikKc2V0KExBTkdWRVJTSU9OICIyMCIgQ0FDSEUgU1RSSU5HICJMYW5ndWFnZSBzdGFuZGFyZCB2ZXJzaW9uIikKc2V0KFNSQ0VYVCAiY3BwIiBDQUNIRSBTVFJJTkcgIlNvdXJjZSBmaWxlIGV4dGVuc2lvbiAoYyBvciBjcHApIikKc2V0KE1BQ1JPICIiIENBQ0hFIFNUUklORyAiTWFjcm8gZGVmaW5pdGlvbnMiKQpzZXQoRkxBR1MgIiIgQ0FDSEUgU1RSSU5HICJBZGRpdGlvbmFsIGNvbXBpbGluZyBmbGFncyIpCnNldChMSUJSQVJJRVMgIiIgQ0FDSEUgU1RSSU5HICJBZGRpdGlvbmFsIGxpYnJhcmllcyBsaXN0IHRvIGxpbmsgYWdhaW5zdCIpCgppZigke1NSQ0VYVH0gU1RSRVFVQUwgImMiKQogICAgc2V0KENNQUtFX0NfU1RBTkRBUkQgJHtMQU5HVkVSU0lPTn0pCiAgICBzZXQoQ01BS0VfQ19GTEFHUyAiJHtDTUFLRV9DX0ZMQUdTfSAke0ZMQUdTfSIpCiAgICBlbmFibGVfbGFuZ3VhZ2UoQykKZWxzZSgpCiAgICBzZXQoQ01BS0VfQ1hYX1NUQU5EQVJEICR7TEFOR1ZFUlNJT059KQogICAgc2V0KENNQUtFX0NYWF9GTEFHUyAiJHtDTUFLRV9DWFhfRkxBR1N9ICR7RkxBR1N9IikKICAgIGVuYWJsZV9sYW5ndWFnZShDWFgpCmVuZGlmKCkKCiMgaWYgU1JDRElSLCBJTkNESVIsIE9VVCwgQlVJTERESVIgc3RhcnQgd2l0aCAiLi8iLCByZW1vdmUgaXQKZm9yZWFjaChESVJfVkFSIFNSQ0RJUiBJTkNESVIgT1VUIEJVSUxERElSKQogICAgaWYoJHske0RJUl9WQVJ9fSBNQVRDSEVTICJeXC4vIikKICAgICAgICBzdHJpbmcoU1VCU1RSSU5HICR7JHtESVJfVkFSfX0gMiAtMSAke0RJUl9WQVJ9KQogICAgZW5kaWYoKQplbmRmb3JlYWNoKCkKCiMgcHJlZml4IGJ5IGFic29sdXRlIHBhdGggb2Ygd29ya3NwYWNlIGZvbGRlcgpzZXQoT1VUICR7Q01BS0VfU09VUkNFX0RJUn0vJHtPVVR9KQpzZXQoQlVJTERESVIgJHtDTUFLRV9TT1VSQ0VfRElSfS8ke0JVSUxERElSfSkKc2V0KFNSQ0RJUiAke0NNQUtFX1NPVVJDRV9ESVJ9LyR7U1JDRElSfSkKc2V0KElOQ0RJUiAke0NNQUtFX1NPVVJDRV9ESVJ9LyR7SU5DRElSfSkKCiMgZ2V0IGFsbCBzb3VyY2UgZmlsZXMKZmlsZShHTE9CX1JFQ1VSU0UgU09VUkNFUyAiJHtTUkNESVJ9LyouJHtTUkNFWFR9IikKCiMgZ2V0IGFsbCBpbmNsdWRlIGRpcmVjdG9yaWVzCmZpbGUoR0xPQl9SRUNVUlNFIEhFQURFUl9GSUxFUyAiJHtJTkNESVJ9LyouaCIgIiR7SU5DRElSfS8qLmhwcCIpCgpzZXQoSU5DTFVERV9ESVJTICIiKQpmb3JlYWNoKEhFQURFUl9GSUxFICR7SEVBREVSX0ZJTEVTfSkKICAgIGdldF9maWxlbmFtZV9jb21wb25lbnQoRElSICR7SEVBREVSX0ZJTEV9IERJUkVDVE9SWSkKICAgIGxpc3QoQVBQRU5EIElOQ0xVREVfRElSUyAke0RJUn0pCmVuZGZvcmVhY2goKQoKIyByZW1vdmUgZHVwbGljYXRlIGRpcmVjdG9yaWVzCmxpc3QoUkVNT1ZFX0RVUExJQ0FURVMgSU5DTFVERV9ESVJTKQoKaW5jbHVkZV9kaXJlY3Rvcmllcygke0lOQ0xVREVfRElSU30pCgppZihNQUNSTykKICAgIGZvcmVhY2goTSBJTiBMSVNUUyBNQUNSTykKICAgICAgICBhZGRfY29tcGlsZV9kZWZpbml0aW9ucygke019KQogICAgZW5kZm9yZWFjaCgpCmVuZGlmKCkKCmlmKEJVSUxEX1RZUEUgU1RSRVFVQUwgImJ1aWxkIikKICAgIHNldChFWEVDVVRBQkxFX09VVFBVVF9QQVRIICR7T1VUfS8ke0NNQUtFX0JVSUxEX1RZUEV9KSAjIFZTIHNwZWNpZmljCmVsc2VpZihCVUlMRF9UWVBFIFNUUkVRVUFMICJzaGFyZWQiKQogICAgc2V0KEVYRUNVVEFCTEVfT1VUUFVUX1BBVEggJHtPVVR9L2xpYikgIyBWUyBzcGVjaWZpYwplbHNlaWYoQlVJTERfVFlQRSBTVFJFUVVBTCAic3RhdGljIikKICAgIHNldChFWEVDVVRBQkxFX09VVFBVVF9QQVRIICR7T1VUfS9saWIpICMgVlMgc3BlY2lmaWMKZW5kaWYoKQoKc2V0KENNQUtFX1JVTlRJTUVfT1VUUFVUX0RJUkVDVE9SWSAke0VYRUNVVEFCTEVfT1VUUFVUX1BBVEh9KQoKIyBDcmVhdGUgdGhlICJiaW4vIiBkaXJlY3RvcnkgaWYgaXQgZG9lc24ndCBleGlzdApmaWxlKE1BS0VfRElSRUNUT1JZICR7RVhFQ1VUQUJMRV9PVVRQVVRfUEFUSH0pCgojIFVOSVgtT05MWSAtIEZ1bmN0aW9uIHRvIGZpbmQgYW5kIGluY2x1ZGUvbGluayBsaWJyYXJpZXMKZnVuY3Rpb24oZmluZF9hbmRfbGlua19saWJyYXJ5IGxpYikKICAgIGZpbmRfcGF0aCgke2xpYn1fSU5DTFVERV9ESVIgJHtsaWJ9KQogICAgZmluZF9saWJyYXJ5KCR7bGlifV9MSUJSQVJZICR7bGlifSkKCiAgICBpZigke2xpYn1fSU5DTFVERV9ESVIpCiAgICAgICAgaW5jbHVkZV9kaXJlY3RvcmllcygkeyR7bGlifV9JTkNMVURFX0RJUn0pCiAgICAgICAgbWVzc2FnZShTVEFUVVMgIkZvdW5kIGluY2x1ZGUgZGlyZWN0b3J5IGZvciAke2xpYn06ICR7JHtsaWJ9X0lOQ0xVREVfRElSfSIpCiAgICBlbmRpZigpCgogICAgaWYoJHtsaWJ9X0xJQlJBUlkpCiAgICAgICAgdGFyZ2V0X2xpbmtfbGlicmFyaWVzKCR7UFJPSkVDVF9OQU1FfSAkeyR7bGlifV9MSUJSQVJZfSkKICAgICAgICBtZXNzYWdlKFNUQVRVUyAiRm91bmQgbGlicmFyeSBmb3IgJHtsaWJ9OiAkeyR7bGlifV9MSUJSQVJZfSIpCiAgICBlbmRpZigpCmVuZGZ1bmN0aW9uKCkKCgojIFZTIHNwZWNpZmljCmlmKE1TVkMpCiAgICBtZXNzYWdlKFNUQVRVUyAiTVNWQyBkZXRlY3RlZCIpCiAgICBtZXNzYWdlKEZBVEFMX0VSUk9SICJNU1ZDIGlzIG5vdCBzdXBwb3J0ZWQgeWV0LiBGZWVsIGZyZWUgdG8gY29udHJpYnV0ZS4gaHR0cHM6Ly9naXRodWIuY29tL05veEZseS9uZnBtIikKZW5kaWYoKQoKCiMgc3BlY2lmaWMgYnVpbGQgdHlwZSBjb25maWcgLSB0YXJnZXRzCgppZihCVUlMRF9UWVBFIFNUUkVRVUFMICJidWlsZCIpCiAgICBhZGRfZXhlY3V0YWJsZSgke1BST0pFQ1RfTkFNRX0gJHtTT1VSQ0VTfSkKCiAgICBzZXRfdGFyZ2V0X3Byb3BlcnRpZXMoJHtUQVJHRVR9IFBST1BFUlRJRVMKICAgICAgICBSVU5USU1FX09VVFBVVF9ESVJFQ1RPUlkgJHtDTUFLRV9SVU5USU1FX09VVFBVVF9ESVJFQ1RPUll9CiAgICApCgogICAgaW5zdGFsbChUQVJHRVRTICR7UFJPSkVDVF9OQU1FfSBERVNUSU5BVElPTiAke0NNQUtFX1JVTlRJTUVfT1VUUFVUX0RJUkVDVE9SWX0pCgogICAgYWRkX2N1c3RvbV90YXJnZXQoYnVpbGQKICAgICAgICBDT01NQU5EICR7Q01BS0VfQ09NTUFORH0gLS1idWlsZCAke0NNQUtFX0JJTkFSWV9ESVJ9IC0tdGFyZ2V0ICR7UFJPSkVDVF9OQU1FfQogICAgICAgIENPTU1FTlQgIkJ1aWxkaW5nIGV4ZWN1dGFibGUiCiAgICApCgoKZWxzZWlmKEJVSUxEX1RZUEUgU1RSRVFVQUwgInNoYXJlZCIpCiAgICBhZGRfbGlicmFyeSgke1BST0pFQ1RfTkFNRX0gU0hBUkVEICR7U09VUkNFU30pCgogICAgc2V0X3RhcmdldF9wcm9wZXJ0aWVzKCR7UFJPSkVDVF9OQU1FfSBQUk9QRVJUSUVTCiAgICAgICAgTElCUkFSWV9PVVRQVVRfRElSRUNUT1JZICR7Q01BS0VfTElCUkFSWV9PVVRQVVRfRElSRUNUT1JZfQogICAgKQoKICAgIGluc3RhbGwoVEFSR0VUUyAke1BST0pFQ1RfTkFNRX0gREVTVElOQVRJT04gJHtDTUFLRV9MSUJSQVJZX09VVFBVVF9ESVJFQ1RPUll9KQoKICAgIGFkZF9jdXN0b21fdGFyZ2V0KHNoYXJlZAogICAgICAgIENPTU1BTkQgJHtDTUFLRV9DT01NQU5EfSAtLWJ1aWxkICR7Q01BS0VfQklOQVJZX0RJUn0gLS10YXJnZXQgJHtQUk9KRUNUX05BTUV9CiAgICAgICAgQ09NTUVOVCAiQnVpbGRpbmcgc2hhcmVkIGxpYnJhcnkiCiAgICApCgoKZWxzZWlmKEJVSUxEX1RZUEUgU1RSRVFVQUwgInN0YXRpYyIpCiAgICBhZGRfbGlicmFyeSgke1BST0pFQ1RfTkFNRX0gU1RBVElDICR7U09VUkNFU30pCgogICAgc2V0X3RhcmdldF9wcm9wZXJ0aWVzKCR7VEFSR0VUfSBQUk9QRVJUSUVTCiAgICAgICAgQVJDSElWRV9PVVRQVVRfRElSRUNUT1JZICR7Q01BS0VfQVJDSElWRV9PVVRQVVRfRElSRUNUT1JZfQogICAgKQoKICAgIGluc3RhbGwoVEFSR0VUUyAke1BST0pFQ1RfTkFNRX0gREVTVElOQVRJT04gJHtDTUFLRV9BUkNISVZFX09VVFBVVF9ESVJFQ1RPUll9KQoKICAgIGFkZF9jdXN0b21fdGFyZ2V0KHN0YXRpYwogICAgICAgIENPTU1BTkQgJHtDTUFLRV9DT01NQU5EfSAtLWJ1aWxkICR7Q01BS0VfQklOQVJZX0RJUn0gLS10YXJnZXQgJHtQUk9KRUNUX05BTUV9CiAgICAgICAgQ09NTUVOVCAiQnVpbGRpbmcgc3RhdGljIGxpYnJhcnkiCiAgICApCgplbmRpZigpCgoKaWYoTk9UIE1TVkMpCiAgICBmb3JlYWNoKGxpYiAke0xJQlJBUklFU30pCiAgICAgICAgZmluZF9hbmRfbGlua19saWJyYXJ5KCR7bGlifSkKICAgIGVuZGZvcmVhY2goKQplbmRpZigpCgoKCmFkZF9jdXN0b21fdGFyZ2V0KGNsZWFyCiAgICBDT01NQU5EICR7Q01BS0VfQ09NTUFORH0gLUUgZWNobyAiQnVpbGQgZGlyZWN0b3J5IGNsZWFyZWQiCikK"
     echo -e "$cmake_content" | base64 --decode
 }
 
@@ -1057,7 +1154,7 @@ internal_get_distro_base() {
         OS="Windows"
         DISTRO="Msys"
         PREFERENCE_PATH=~/AppData/Roaming/nfpm
-    elif [ -f /etc/os-release ]; then
+    elif [[ "$(uname -s)" == "Linux" || -f /etc/os-release ]]; then
         OS="Linux"
         PREFERENCE_PATH=~/.config/nfpm
         . /etc/os-release
@@ -1204,6 +1301,9 @@ internal_compile() {
         fi
     done
 
+    local libraries=$(internal_get_category_keys "dependencies")
+    libraries=$(echo $libraries | sed 's/ /;/g')
+
     local start_time=$(date_now)
 
     local prepare_cmd="cmake -S . -B $P_BUILD_DIR \
@@ -1217,6 +1317,7 @@ internal_compile() {
         -D \"SRCEXT=$P_SRC_EXT\" \
 		-D \"FLAGS=$P_FLAGS\" \
         -D \"MACRO=$X_MACRO\" \
+        -D \"LIBRARIES=$libraries\" \
 	"
 
     export CMAKE_BUILD_PARALLEL_LEVEL=$X_THREADS
@@ -1269,6 +1370,18 @@ internal_compile() {
 #              The rest of the arguments are the user's arguments.
 
 cmd_new_project() {
+    if [ $SHOW_CMD_HELP -eq 1 ]; then
+        echo "Creates a new project."
+        echo "Usage: $COMMAND_NAME new [options] [path]"
+        echo "Options:"
+        echo "  --name=<name>    Set the project name. (default: New Project)"
+        echo "  --lang=<lang>    Set the project language (c/cpp). Asked if not specified."
+        echo "  --mode=<mode>    Set the project mode (0/1). (default: 0)"
+        echo "  --guard=<guard>  Set the guard manager (ifndef/pragma). (default: ifndef)"
+        echo "Default path is the current directory."
+        exit 0
+    fi
+
     local path="."
     local name="New Project"
     local lang=""
@@ -1339,6 +1452,14 @@ cmd_new_project() {
 }
 
 cmd_generate() { # $2=type, $3=name
+    if [ $SHOW_CMD_HELP -eq 1 ]; then
+        echo "Usage: $COMMAND_NAME generate [<type> <name>]"
+        echo "If no type is specified, looks to restore missing files in the current project"
+        echo "Types:"
+        echo "  class (c)"
+        exit 0
+    fi
+
     ensure_inside_project;
 
     if [ -z "$2" ]; then
@@ -1353,7 +1474,15 @@ cmd_generate() { # $2=type, $3=name
 }
 
 cmd_install_all_packages() {
-    ensure_inside_project; 
+    if [ $SHOW_CMD_HELP -eq 1 ]; then
+        echo "Usage: $COMMAND_NAME install"
+        echo "Installs all the dependencies of the project listed in its configuration file."
+        exit 0
+    fi
+
+    ensure_inside_project;
+
+    [ "$DISTRO" == "Windows" ] && exit 0;
 
     os_update
 
@@ -1362,92 +1491,85 @@ cmd_install_all_packages() {
     local in_dependencies=0
     local start_time=$(date_now)
 
-    while IFS=: read -r dependency packages; do
-        [[ "$dependency" == "dependencies" ]] && { in_dependencies=1; continue; }
-        [[ $in_dependencies -eq 1 && "$dependency" =~ ^[[:space:]]*$ ]] && in_dependencies=0
-        [[ $in_dependencies -eq 1 ]] && for package in $packages; do
-            internal_install_package $package
-            installStatus=$?
-            [ $installStatus -eq 1 ] && installed_success_count=$((installed_success_count+1))
-            [ $installStatus -eq 2 ] && installed_failed_count=$((installed_failed_count+1))
-        done
-    done < "$CONFIG_PATH"
+    local all_deps=$(internal_get_category_keys "dependencies")
 
-    local duration=$(get_formatted_duration $start_time)
-    [ $installed_failed_count -eq 0 ] && [ $installed_success_count -eq 0 ] && echo "Up to date."
-    echo -e "\n$installed_success_count installed, $installed_failed_count failed in $duration."
-}
+    for key in $all_deps; do
+        if ! internal_has_category_key "dependencies" "$key"; then
+            continue;
+        fi
 
-cmd_add_package() { # $1=dependency name, $2..=packages
-    ensure_inside_project
-    shift
-
-    if [ -z "$1" ] || [ -z "$2" ]; then
-        echo "Usage: $COMMAND_NAME add <dependency_name> <package1_name> [<package2_name> ...]"
-        exit 1
-    fi
-
-    dep=$1
-    shift
-
-    local packages=("$@")
-    local added_count=0
-    local installed_success_count=0
-    local installed_failed_count=0
-    local start_time=$(date_now)
-
-    # Step 1: Check if the key already exists in the dependencies list
-    if grep -q "  $dep:" $CONFIG_PATH; then
-        # Step 1.a: Look for already present values for this key
-        local existing_packages=$(grep "  $dep:" $CONFIG_PATH | awk -F': ' '{print $2}')
-        for package in $existing_packages; do
-            for i in "${!packages[@]}"; do
-                if [ "${packages[i]}" == "$package" ]; then
-                    echo "${packages[i]} is already in the dependencies list."
-                    unset 'packages[i]'
-                fi
-            done
-        done
-    fi
-
-    # Check for packages in all dependency lines
-    local all_existing_packages=$(awk '/^  / {print $2}' $CONFIG_PATH)
-    for package in $all_existing_packages; do
-        for i in "${!packages[@]}"; do
-            if [ "${packages[i]}" == "$package" ]; then
-                echo "${packages[i]} is already in the dependencies list."
-                unset 'packages[i]'
-            fi
-        done
-    done
-
-    local new_packages=()
-
-    # Step 2: Install each dependency
-    for package in "${packages[@]}"; do
-        [ -z "$package" ] && continue
+        local package=$(internal_get_category_field_value "dependencies" "$key")
 
         internal_install_package $package
         local r=$?
 
         [ $r -eq 1 ] && installed_success_count=$((installed_success_count+1))
         [ $r -eq 2 ] && installed_failed_count=$((installed_failed_count+1))
-
-        if [ $r -ne 2 ]; then
-            new_packages+=($package)
-            added_count=$((added_count+1))
-            echo "$package added."
-        fi
     done
 
-    # Step 3: Add successfully installed packages to the dependencies list
-    # Combine existing and new packages
-    local combined_packages="$existing_packages ${new_packages[*]}"
-    combined_packages=$(echo "$combined_packages" | sed 's/^ *//;s/ *$//')
+    local duration=$(get_formatted_duration $start_time)
+    [ $installed_failed_count -eq 0 ] && [ $installed_success_count -eq 0 ] && echo "Up to date."
+    echo -e "\n$installed_success_count installed, $installed_failed_count failed in $duration."
+}
 
-    internal_set_category_field_value "dependencies" "$dep" "$combined_packages"
+cmd_add_package() { # $1=dependency name, $2=package
+    if [ $SHOW_CMD_HELP -eq 1 ]; then
+        echo "Usage: $COMMAND_NAME add <dependency_name> <package_name>"
+        echo "Adds a package to the project's dependencies."
+        echo "The dependency name must be recognizable by CMake to dynamically link the package."
+        exit 0
+    fi
 
-    # Step 4: Sort the dependencies lines
+    ensure_inside_project
+    shift
+
+    if [[ -z "$1" || ( -z "$2" && "$DISTRO" != "Windows" ) ]]; then
+        echo "Usage: $COMMAND_NAME add <dependency_name> <package_name>"
+        exit 1
+    fi
+
+    local dep=$1
+    local package=$2
+    local added_count=0
+    local installed_success_count=0
+    local installed_failed_count=0
+    local start_time=$(date_now)
+
+    # check if the package is already in the dependencies
+    if internal_has_category_key "dependencies" "$dep"; then
+        log_error "$dep is already in the dependencies list."
+        exit 1
+    fi
+
+    local r
+
+    if [ "$DISTRO" == "Windows" ]; then
+        installed_success_count=$((installed_success_count+1))
+        package=""
+        r=0
+    else
+        local all_packages=$(internal_get_category_values "dependencies")
+
+        for key in $all_packages; do
+            if [ "$package" == "$key" ]; then
+                log_error "$package is already in the dependencies list."
+                exit 1
+            fi
+        done
+
+        internal_install_package $package
+        r=$?
+
+        [ $r -eq 1 ] && installed_success_count=$((installed_success_count+1))
+        [ $r -eq 2 ] && installed_failed_count=$((installed_failed_count+1))
+    fi
+
+    if [ $r -ne 2 ]; then
+        added_count=$((added_count+1))
+        internal_set_category_field_value "dependencies" "$dep" "$package"
+        echo "$dep added."
+    fi
+
     internal_sort_dependencies
 
     local duration=$(get_formatted_duration $start_time)
@@ -1455,52 +1577,22 @@ cmd_add_package() { # $1=dependency name, $2..=packages
     echo -e "\n$added_count added, $installed_success_count installed, $installed_failed_count failed in $duration."
 }
 
-cmd_uninstall_packages() { # $2..=packages
-    ensure_inside_project
-
-    if [ -z "$2" ]; then
-        echo "Usage: $COMMAND_NAME uninstall <package_name> [package_name...]"
-        exit 1
+cmd_remove_packages() { # $2..=dependencies
+    if [ $SHOW_CMD_HELP -eq 1 ]; then
+        echo "Usage: $COMMAND_NAME remove [--uninstall] <dependency_name> [dependency_name...]"
+        echo "Removes a package from the project's dependencies."
+        echo "If --uninstall is specified, the package will be uninstalled from the system."
+        exit 0
     fi
 
-    shift
-
-    local package_count=0
-    local dependency_count=$#
-    local start_time=$(date_now)
-
-    for package_name in "$@"; do
-        package_line=$(internal_get_category_field_value "dependencies" "$package_name")
-
-        if [ -z "$package_line" ]; then
-            log_error "$package_name is not in the dependency list of this project."
-            continue
-        fi
-
-        for package in $package_line; do
-            if os_uninstall $package &> $OUTPUT; then 
-                echo "$package has been uninstalled from the computer."
-                package_count=$((package_count+1))
-            else
-                log_error "Failed to uninstall $package."
-            fi
-        done
-    done
-
-    local duration=$(get_formatted_duration $start_time)
-    echo -e "\nUninstalled $package_count packages for $dependency_count dependencies in $duration."
-}
-
-cmd_remove_packages() { # $2..=packages
     ensure_inside_project
 
     local confirm_uninstall_all=0
     
-    [[ "$@" == *"-y"* ]] && confirm_uninstall_all=1 && set -- "${@//"-y"}"
-    [[ "$@" == *"-n"* ]] && confirm_uninstall_all=2 && set -- "${@//"-n"}"
+    [[ "$@" == *"--uninstall"* ]] && confirm_uninstall_all=1 && set -- "${@//"--uninstall"}"
 
     if [ -z "$2" ]; then
-        echo "Usage: $COMMAND_NAME remove <package_name> [package_name...]"
+        echo "Usage: $COMMAND_NAME remove [--uninstall] <dependency_name> [dependency_name...]"
         exit 1
     fi
 
@@ -1509,35 +1601,34 @@ cmd_remove_packages() { # $2..=packages
     # trim $@
     set -- $(echo $@ | xargs)
 
-    for package_name in "$@"; do
-        local package_line=$(internal_get_category_field_value "dependencies" "$package_name")
+    for dependency in "$@"; do
+        if ! internal_has_category_key "dependencies" "$dependency"; then
+            log_error "$dependency is not in the dependency list of this project."
+            continue
+        fi
+
+        local package=$(internal_get_category_field_value "dependencies" "$dependency")
+
+        internal_remove_category_key "dependencies" "$dependency"
+        echo "$dependency has been removed from the project."
+
+        [ "$DISTRO" == "Windows" ] && continue
         
-        if [ -z "$package_line" ]; then
-            log_error "$package_name is not in the dependency list of this project."
-            continue
-        fi
-
-        sed -i "/  $package_name:/d" $CONFIG_PATH
-        echo "$package_name has been removed from the project."
-
-        if [ $confirm_uninstall_all -eq 2 ]; then
-            continue
-        fi
-
         if [ $confirm_uninstall_all -eq 1 ]; then
-            os_uninstall $package_line
-            continue
+            os_uninstall $package \
+                && log_success "$package uninstalled." \
+                || log_error "Failed to uninstall $package."
         fi
-
-        for package in $package_line; do
-            local uninstall
-            read -p "Do you also want to uninstall $package from the computer? (y/N): " uninstall
-            [[ $uninstall =~ ^[Yy]$ ]] && os_uninstall $package
-        done
     done
 }
 
 cmd_list_packages() {
+    if [ $SHOW_CMD_HELP -eq 1 ]; then
+        echo "Usage: $COMMAND_NAME list"
+        echo "Lists all the dependencies of the project."
+        exit 0
+    fi
+
     ensure_inside_project
 
     awk '
@@ -1573,25 +1664,10 @@ cmd_list_packages() {
         for (i = 1; i <= n; i++) {
             key = sorted_keys[i]
             values = keys[key]
-            split(values, value_arr, " ")
             if (i < n) {
-                print "├─" key
-                for (j = 1; j <= length(value_arr); j++) {
-                    if (j < length(value_arr)) {
-                        print "│      ├ " value_arr[j]
-                    } else {
-                        print "│      └ " value_arr[j]
-                    }
-                }
+                print "├─" key ": " values
             } else {
-                print "└─" key
-                for (j = 1; j <= length(value_arr); j++) {
-                    if (j < length(value_arr)) {
-                        print "       ├ " value_arr[j]
-                    } else {
-                        print "       └ " value_arr[j]
-                    }
-                }
+                print "└─" key ": " values
             }
         }
     }
@@ -1599,6 +1675,12 @@ cmd_list_packages() {
 }
 
 cmd_patch_version() { # $2=patch|minor|major
+    if [ $SHOW_CMD_HELP -eq 1 ]; then
+        echo "Usage: $COMMAND_NAME patch <patch|minor|major>"
+        echo "Increments the version of the project."
+        exit 0
+    fi
+
     ensure_inside_project;
 
     local current_version=$(internal_get_category_field_value "project" "version")
@@ -1626,6 +1708,13 @@ cmd_patch_version() { # $2=patch|minor|major
 }
 
 cmd_change_project_configuration() { # $2=key, $3=value
+    if [ $SHOW_CMD_HELP -eq 1 ]; then
+        echo "Usage: $COMMAND_NAME set <key> <value>"
+        echo "Sets a project configuration."
+        echo "Possible keys are: name, description, author, url, license, cppVersion, cVersion, mode, guard"
+        exit 0
+    fi
+
     ensure_inside_project
 
     shift
@@ -1653,12 +1742,42 @@ cmd_change_project_configuration() { # $2=key, $3=value
 }
 
 cmd_compile() {
+    if [ $SHOW_CMD_HELP -eq 1 ]; then
+        echo "Compiles the project, without running it afterwards."
+        echo "Usage: $COMMAND_NAME compile [options]"
+        echo "Options:"
+        echo "  -d, --dev       Compile in debug mode."
+        echo "  -g, --debug     Compile in debug mode."
+        echo "  -r, --release   Compile in release mode."
+        echo "  --static        Compile in static mode."
+        echo "  --shared        Compile in shared mode."
+        echo "  -f, --force     Force the project to be recompiled."
+        echo "  -t <threads>    Set the number of threads to use for compilation."
+        echo "You can also add -v or --verbose to get more details of the compilation."
+        exit 0
+    fi
+
     shift
     internal_compile $@
     exit $?
 }
 
 cmd_run() { # $@=args
+    if [ $SHOW_CMD_HELP -eq 1 ]; then
+        echo "Compiles the project then runs it if compilation succeeded."
+        echo "Usage: $COMMAND_NAME run [options]"
+        echo "Options:"
+        echo "  -d, --dev       Run in debug mode."
+        echo "  -g, --debug     Run in debug mode."
+        echo "  -r, --release   Run in release mode."
+        echo "  --static        Run in static mode."
+        echo "  --shared        Run in shared mode."
+        echo "  -f, --force     Force the project to be recompiled."
+        echo "  -t <threads>    Set the number of threads to use for compilation."
+        echo "You can also add -v or --verbose to get more details of the compilation."
+        exit 0
+    fi
+
     shift
 
     echo -e -n "${CLR_DGRAY}"
@@ -1695,6 +1814,12 @@ cmd_run() { # $@=args
 }
 
 cmd_clean_project() {
+    if [ $SHOW_CMD_HELP -eq 1 ]; then
+        echo "Usage: $COMMAND_NAME clean"
+        echo "Cleans the project by removing the build directory."
+        exit 0
+    fi
+
     ensure_project_structure
     make -C $P_BUILD_DIR clear &> /dev/null
     [ -d "$P_BUILD_DIR" ] && rm -r "$P_BUILD_DIR"/*
@@ -1702,6 +1827,12 @@ cmd_clean_project() {
 }
 
 cmd_update_script() {
+    if [ $SHOW_CMD_HELP -eq 1 ]; then
+        echo "Usage: $COMMAND_NAME update"
+        echo "Updates the script to the latest version."
+        exit 0
+    fi
+
     if ! os_fetch_file_content "$SCRIPT_PATH" "$UPDATE_URL"; then
         log_error "Failed to update"
         exit 1
@@ -1726,6 +1857,13 @@ cmd_get_help() {
 }
 
 cmd_set_global_config() {
+    if [ $SHOW_CMD_HELP -eq 1 ]; then
+        echo "Usage: $COMMAND_NAME global <key> <value>"
+        echo "Sets a global configuration preference for the script."
+        echo "Possible keys are: pm (for package manager), lang, guard"
+        exit 0
+    fi
+
     if [ -z "$2" ]; then
         echo "Usage: $COMMAND_NAME global <key> [...options]"
         exit 1
@@ -1740,12 +1878,24 @@ cmd_set_global_config() {
 }
 
 cmd_infos() {
+    if [ $SHOW_CMD_HELP -eq 1 ]; then
+        echo "Usage: $COMMAND_NAME info"
+        echo "Prints some informations that could help for issues."
+        exit 0
+    fi
+
     echo "$OS - $DISTRO $VERSION"
     echo "$APT_INSTALL"
     cmd_get_version
 }
 
 cmd_get_version() {
+    if [ $SHOW_CMD_HELP -eq 1 ]; then
+        echo "Usage: $COMMAND_NAME version"
+        echo "Shows the command's version."
+        exit 0
+    fi
+
     echo -e "v$NF_VERSION"
 }
 
@@ -1771,6 +1921,7 @@ UPDATE_URL="https://raw.githubusercontent.com/NoxFly/nfpm/main/nf.sh"
 # By default, compile then run
 RUN_AFTER_COMPILE=1
 VERBOSE=0
+SHOW_CMD_HELP=0
 
 declare -A GLOBALS=()
 
@@ -1817,14 +1968,16 @@ minor                                   Minor the project's version.
 major                                   Major the project's version.
 
 set                 <key> <value>       Set a project's configuration key to a new value.
-                                        This is for the project and config categories of the yml config file.
+                                        This is for the project and config categories of the
+                                        yml config file.
 
 init                                    Initialize a new project. Create a configuration file.
 
 generate            g [<type <path/name>]
-                                        If no arguments provided, generates project's structure with a main file.
-                                        Re-create missing folders.
-                                        If type is provided, generate a new file of this type. See below.
+                                        If no arguments provided, generates project's structure
+                                        with a main file. Re-create missing folders.
+                                        If type is provided, generate a new file of this type.
+                                        See below.
 ${CLR_LGRAY}possible types:${CLR_RESET}
     class           c <class_name>      Creates a new class with its header and source files.
 
@@ -1832,25 +1985,27 @@ ${CLR_LGRAY}# Package management${CLR_RESET}\n
 list                l                   List all dependencies.
 install             i                   Install all dependencies.
 
-add                 <dependency_name> <package1_name> [<package2_name> ...]
-                                        Add a package to a dependency.
+add                 <dependency_name> <package_name>
+                                        Add a package to the project, with an associated
+                                        simplified dependency name.
+                                        The dependency name will be used by CMake to find and
+                                        link libraries/includes of this package.
 
-remove              rm <package_name> [package_name...]
-                                        Remove a package from a dependency.
-
-uninstall           u <package_name> [package_name...]
-                                        Uninstall a package from the computer.
+remove              rm <dependency_name> [dependency2_name...]
+                                        Remove a package or list of packages from the project.
 
 ${CLR_LGRAY}# Compilation and execution${CLR_RESET}\n
 run                [parameters ...]     Compile and run the project.
 build                                   Compile the project.
-    --dev               -d              Compile code and run it in dev mode. It's debug mode with modified options.
+    --dev               -d              Compile code and run it in dev mode. It's debug mode with
+                                        modified options.
     --debug             -g              Compile code and run it in debug mode.
     --release           -r              Compile code and run it in release mode.
     --force             -f              Make clear before compiling again.
     --static                            Build the project as static library.
     --shared                            Build the project as shared library.
-                        -t              Compile the project with a specific number of threads (default to half of existing).
+                        -t              Compile the project with a specific number of threads
+                                        (default to half of existing).
                                         \"max\" to get the maximum minus 1 thread available.
                                         A number to work with that number of threads."
 
@@ -1865,6 +2020,13 @@ if [[ "$@" == *"-v"* ]] || [[ "$@" == *"--verbose"* ]]; then
     VERBOSE=1
     set -- "${@//"-v"}"
     set -- "${@//"--verbose"}"
+fi
+
+# if we find "--help" and not as second argument (first is the script name), then remove it and
+# enable SHOW_CMD_HELP to 1
+if [[ $# -eq 2 && "$@" == *"--help"* && "$1" != "--help" ]]; then
+    SHOW_CMD_HELP=1
+    set -- "${@//"--help"}"
 fi
 
 OUTPUT=$([ $VERBOSE -eq 1 ] && echo "/dev/stdout" || echo "/dev/null")
@@ -1891,7 +2053,6 @@ case $1 in
     install|i) cmd_install_all_packages;;
     add) cmd_add_package $@;;
     remove|rm) cmd_remove_packages $@;;
-    uninstall|u) cmd_uninstall_packages $@;;
 
 # Compilation & Execution
     run) cmd_run $@;;

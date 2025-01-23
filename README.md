@@ -2,7 +2,7 @@
 
 A free, lightweight and open-source project manager for linux C/C++ projects.
 
-Always struggled to manage a project where every members of the team are in different OS, and with libraries at different paths ?
+Always struggled to manage a project where every members of the team are in different OS, with different IDE ?
 
 This scripts helps you improve your time by :
 - Managing packages, config, compilation and run
@@ -10,10 +10,12 @@ This scripts helps you improve your time by :
 - whether for a personal or team project
 with a lightweight configuration and use.
 
+> The configuration file is in yml, and accepts comments.
+
 ## Prerequisites
 
 For now, the use of this script only works in a Unix like environment (Linux, MacOS, MingW, Cygwin, ...).
-However, once you generated the base of the project with the script, it will also create a CMake configuration, that'll can be used across OS and configurations.
+However, I'll manage to make it usable by Visual Studio a day. Feel free to help me improve and contribute this script !
 
 **Bash 4 is required for the script to work.**
 
@@ -31,7 +33,8 @@ sudo curl --fail --location --output /usr/local/bin/nf https://raw.githubusercon
 sudo chmod 755 /usr/local/bin/nf
 # Test :
 nf --version
-nf --help
+nf --help # get global help message
+nf <cmd> --help # get command specific usage informations
 ```
 
 ## Basic commands
@@ -87,6 +90,9 @@ Note : specifying a name during the `nf new` command via the `--name` argument d
 
 ```sh
 # create a class depending the current project's architecture
+ng generate class MyClass
+
+# Or, shorter
 nf g c MyClass
 
 # architecture mode 0 generates this :
@@ -111,6 +117,7 @@ Associate a keywork to one or more packages that will be used by your project.
 Then, when a someone else goes in your project, he just have to ask the script to download them all !
 
 #### To add some packages
+
 ```sh
 nf add GLEW libglew-dev
 nf add SDL2 libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev
@@ -127,12 +134,16 @@ dependencies:
   SDL2: libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev
 ```
 
-If a package is not installed on your computer, it will try to install It.
+If a package is not installed on your computer, it will try to install it.
 If it fails, the package won't be added to your project's configuration.
 
-These lines are always sorted by their key.
+These lines are always sorted alphabetically (ascending) by their key.
+
+> /!\ Note : The dependency name (the key) should be the "official" name of the library so CMake can recognize it and dynamically find what to include from it. In general, for `lib<name>-dev`, it the key must be `name` (`-` are replaced by `_`).
+
 
 #### Ask to install all packages :
+
 ```sh
 nf install # or nf i
 ```
@@ -141,37 +152,24 @@ If a package is already installed on your computer, it will just skip it in the 
 
 #### Remove or uninstall packages
 
-To remove a package from a project :
-
-It will ask you for each of the packages for the key you entered if you want to also uninstall it from your computer (default to 'No').
-
 ```sh
 nf remove SDL2 # or nf rm
 # SDL2 packages have been removed from the project.
-# uninstall libsdl2-dev ? (y/N)
-# uninstall libsdl2-image-dev ? (y/N)
-# uninstall libsdl2-ttf-dev ? (y/N)
-nf remove SDL2 -y # answer in advance 'yes' to uninstall every packages
-nf remove SDL2 -n # answer in advance 'no' to uninstall every packages
+nf remove --uninstall SDL2
+# SDL2 packages have been removed from the project.
+# libsdl2-dev uninstalled.
 ```
-
-If you wish to directly uninstall a package, you can :
-```sh
-nf uninstall libsdl2-dev # or nf u
-```
-
-`libsdl2-dev` is then removed from the project and the computer.
 
 #### List packages of a project
 
+If you are lazy to the point to not open the `project.yml` file, you can have the same view of the dependencies used in the project doing this :
+
 ```sh
 nf list # or nf l
-# ├─  GLEW
-# │      └ libglew-dev
-# └─  SDL2
-#        ├ libsdl2-dev
-#        ├ libsdl2-image-dev
-#        └ libsdl2-ttf-dev
+# ├─  GLEW: libglew-dev
+# ├─  SDL2: libsdl2-dev
+# ├─  SDL2_image: libsdl2-image-dev
+# └─  SDL2_ttf: libsdl2-ttf-dev
 ```
 
 ### Project's management
