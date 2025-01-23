@@ -1,87 +1,211 @@
-# Shell script for C/C++ projects
+# Noxfly Project Manager
 
-1. Download the script or the repo in a new project folder.
-1. do `chmod 755 run.sh` to let you execute it if you don't have the permissions for.
-1. do `./run.sh -g` to generate the project's structure. By default it's for `cpp`. See `./run.sh -l` command.
-1. do `./run.sh` to compile the code and execute it.
+A free, lightweight and open-source project manager for linux C/C++ projects.
 
-Run `./run.sh --patch` to download latest online version of the script.
+Always struggled to manage a project where every members of the team are in different OS, with different IDE ?
 
-## Script usage
+This scripts helps you improve your time by :
+- Managing packages, config, compilation and run
+- for cross-env development
+- whether for a personal or team project
+with a lightweight configuration and use.
+
+> The configuration file is in yml, and accepts comments.
+
+## Prerequisites
+
+For now, the use of this script only works in a Unix like environment (Linux, MacOS, MingW, Cygwin, ...).
+However, I'll manage to make it usable by Visual Studio a day. Feel free to help me improve and contribute this script !
+
+**Bash 4 is required for the script to work.**
+
+## Installation and use
+
+Make this command to download the script and make it globally available on your computer.
+Adapt to your OS.
+
 ```sh
-$ ./run.sh -h # shows every possible usages (help command)
+# wGET
+sudo wget --https-only -O /usr/local/bin/nf https://raw.githubusercontent.com/NoxFly/nfpm/refs/heads/main/nf.sh
+# cURL
+sudo curl --fail --location --output /usr/local/bin/nf https://raw.githubusercontent.com/NoxFly/nfpm/refs/heads/main/nf.sh
+# Permission to execute, and read/write for updating itself when requested
+sudo chmod 755 /usr/local/bin/nf
+# Test :
+nf --version
+nf --help # get global help message
+nf <cmd> --help # get command specific usage informations
 ```
 
-The script applies the right executable's extension depending on which OS you are :
-* none for Linux
-* `.exe` for Windows
-* `.app` for MacOS
+## Basic commands
 
-## Structure
+Add the `-v` or `--verbose` flag to put some commands in verbose mode.
 
-### Project's mode 0 
+### Update the script
+
 ```sh
-| bin/ # executable folder
-    | release/ # folder where there's the release executable version
-    | debug/ # folder where there's the debug executable version
-| build/ # follows the sub-folders structure you made in your src/ folder.
-    | # all object files (.o) are stored here
-| include/
-    | # every header files are stored here (.h/.hpp/.inl)
-| src/
-    | # every source files are stored here (.c, .cpp)
-    | main.cpp
-.gitignore
-License
-Makefile
-README.md
-run.sh
+# Download the latest version of the script
+nf --update
+nf -U
 ```
 
-### Project's mode 1
+### Create, compile and run a project
+
 ```sh
-| bin/ # executable folder
-    | release/ # folder where there's the release executable version
-    | debug/ # folder where there's the debug executable version
-| build/ # follows the sub-folders structure you made in your src/ folder.
-    | # all object files (.o) are stored here
-| src/
-    | # every source and header files are stored here (.c, .cpp, .h, .hpp, .inl)
-    | Engine/
-        | Engine.cpp
-        | Engine.h
-    | main.cpp
-.gitignore
-License
-Makefile
-README.md
-run.sh
+# new project
+nf new
+# build
+nf build
+# [build] + run
+nf run
 ```
 
-The makefile will compile every source it will find on the `src/` folder.
-It is also adding every sub-folders of `include/` (or `src/` if prject's mode = 1) folder so when you're doing an include, you just have to write the filename (with .h at the end) without its path.
+The `new` command can take parameters to customize the project directly from the beginning.
 
-Example :
-```cpp
-#include "../../utils/something.hpp" // useless !
+If you wish to create a new nf project with already existing code structure, then running the `new` command will just create a `project.yml` and missing stuff.
+
+All the parameters are optional.
+
+A path can be specified as first argument. If not present, it will create a new project in the current directory.
+
+```sh
+# these are the default values
+nf new . --name=NewProject --lang=cpp --mode=0 --guard=ifndef
+# example of a non default base configuration
+nf new ./poc --name=poc --lang=c --mode=1 --guard=pragma
+
+# with verbose :
+nf new -v
+
+# if no language specified and not set in global config
+# it will ask you :
+nf new
+# Choose the project language (c/CPP):
+# (cpp is chosen if you hit Enter with blank value)
 ```
-Use this instead :
-```cpp
-#include "something.hpp"
+
+Note : specifying a name during the `nf new` command via the `--name` argument does not allow spaces in it. Don't worry, you'll can change it later thanks a dedicated command (see below).
+
+#### Files generation
+
+```sh
+# create a class depending the current project's architecture
+ng generate class MyClass
+
+# Or, shorter
+nf g c MyClass
+
+# architecture mode 0 generates this :
+# src/MyClass.cpp
+# include/MyClass.hpp
+
+# architecture mode 1 generates this :
+# src/MyClass/MyClass.cpp
+# src/MyClass/MyClass.hpp
+
+nf g c core/MyClass
+# if folders of the specified path do not exist
+# it will create them
 ```
 
-So you don't have to be worried about the Makefile, just code and `./run.sh` !
+### Libraries
 
-Tip : you can add `./run.sh` as an alias or symlink so you just have to write `run` instead.
+You can manage easily libraries in your project.
+
+Associate a keywork to one or more packages that will be used by your project.
+
+Then, when a someone else goes in your project, he just have to ask the script to download them all !
+
+#### To add some packages
+
+```sh
+nf add GLEW libglew-dev
+nf add SDL2 libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev
+
+# example output :
+# 3 added, 2 installed, 0 failed in 0m 4s 656ms
+```
+
+Your project configuration file will then have these lines added :
+
+```yml
+dependencies:
+  GLEW: libglew-dev
+  SDL2: libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev
+```
+
+If a package is not installed on your computer, it will try to install it.
+If it fails, the package won't be added to your project's configuration.
+
+These lines are always sorted alphabetically (ascending) by their key.
+
+> /!\ Note : The dependency name (the key) should be the "official" name of the library so CMake can recognize it and dynamically find what to include from it. In general, for `lib<name>-dev`, it the key must be `name` (`-` are replaced by `_`).
 
 
-## Script for libraries
+#### Ask to install all packages :
 
-You can use the script to build static and/or shared libraries :
+```sh
+nf install # or nf i
+```
 
-`./run.sh --static` or `./run.sh --shared`.
+If a package is already installed on your computer, it will just skip it in the installation process.
 
-This will create the object files in the build folder, then create the `.a`, `.so` or `.dll` (on Windows) in the `bin/lib/` folder.<br>
-Plus, it will copy/paste all the header files you have (`.h`, `.hpp` and `.inl`) in `bin/lib/include/{Project_Name}/`, reorganizing these as follow :
-- All files header files that are alone in their folder will be up to their parent, recusivly. This avoids a ton of subfolders just for a file.
-- All `#include "my_project_file"` pathes will be transformed so it will search with a relative path. You can then use it everywhere without worrying about the configuration.
+#### Remove or uninstall packages
+
+```sh
+nf remove SDL2 # or nf rm
+# SDL2 packages have been removed from the project.
+nf remove --uninstall SDL2
+# SDL2 packages have been removed from the project.
+# libsdl2-dev uninstalled.
+```
+
+#### List packages of a project
+
+If you are lazy to the point to not open the `project.yml` file, you can have the same view of the dependencies used in the project doing this :
+
+```sh
+nf list # or nf l
+# ├─  GLEW: libglew-dev
+# ├─  SDL2: libsdl2-dev
+# ├─  SDL2_image: libsdl2-image-dev
+# └─  SDL2_ttf: libsdl2-ttf-dev
+```
+
+### Project's management
+
+The following commands help you manage your project easily.
+
+It is recommended to NOT modify by yourself the `project.yml` file, even for overview.
+
+To change things in your `project.yml`, do the following command, with key begin a key that exists in this file, inside the `project` or `config` section
+
+```sh
+nf set <key> <value>
+
+# For instance :
+nf set name My super project
+# results in :
+#   - `name: My Super Project` inside the project.yml file
+#   - updates the project's name also in the cmake file (capitalized) : MySuperProject
+
+nf set author NoxFly
+nf set license MIT
+
+nf set mode 1
+# this lets you switch between architectures.
+# it moves your files accordingly.
+# if it fails, it backups.
+```
+
+If an author is set, copyrights will automatically added at the beginning of created files with the `nf g` command.
+
+If a license is set in addition to the author, it is added below the author.
+
+#### Update the version of your project :
+
+```sh
+nf patch
+nf minor
+nf major
+```
