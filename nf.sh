@@ -259,14 +259,17 @@ os_find() { # $1=package
     return $?
 }
 
-os_fetch_file_content() {
-    if ! is_command_available "curl"; then
-        log_error "curl is required to fetch the file content."
-        exit 1
+os_fetch_file_content() { # $1=url
+    if is_command_available "curl"; then
+        curl -s $1
+        return
+    elif is_command_available "wget"; then
+        wget -q -O - $1
+        return
     fi
-    # should be available or easily installed on all platforms
-    curl -s $1
-    return $?
+
+    log_error "Either curl or wget is required to fetch the file content."
+    exit 1
 }
 
 # -----------------------------------------------------------
@@ -1874,20 +1877,25 @@ cmd_update_script() {
         exit 0
     fi
 
-    if ! os_fetch_file_content "$SCRIPT_PATH" "$UPDATE_URL"; then
-        log_error "Failed to update"
+    content=$(os_fetch_file_content "$UPDATE_URL")
+    new_version="$(echo "$content" | grep -Eo 'NF_VERSION=[0-9]+\.[0-9]+\.[0-9]+' | cut -d'=' -f2)"
+
+    if [ "$NF_VERSION" == $new_version ]; then
+        echo "Already on latest version ($NF_VERSION)."
+        exit 0
+    fi
+
+    os_admin_check
+
+    sudo echo "$content" | sudo tee "$SCRIPT_PATH" > /dev/null
+
+    if [ $? -ne 0 ]; then
+        log_error "Failed to update the script."
         exit 1
     fi
-
-    VERSION=${VERSION:-0.1}
-    newVersion="$(grep -Eo 'NF_VERSION=[0-9]+\.[0-9]+' $SCRIPT_PATH | cut -d'=' -f2)"
-
-    if [ "$NF_VERSION" == $newVersion ]; then
-        echo "Already on latest version ($NF_VERSION)."
-    else
-        echo "v$NF_VERSION -> v$newVersion"
-        log_success "Successfully updated$"
-    fi
+    
+    echo "v$NF_VERSION -> v$new_version"
+    log_success "Successfully updated"
 
     exit 0
 }
