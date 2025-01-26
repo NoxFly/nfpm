@@ -299,7 +299,6 @@ internal_load_config() {
     P_FLAGS=$(internal_get_category_field_value "config" "flags")
 
     ensure_config_integrity
-    ensure_project_structure
 
     local ext_suffix=""
     [ "$P_LANG" == "cpp" ] && ext_suffix="pp"
@@ -779,8 +778,6 @@ internal_set_guard() {
 }
 
 internal_update_cmake_config() {
-    internal_load_config
-
     local f="CMakeLists.txt"
     local pgname=$(capitalize "$P_NAME")
     local lang=${P_LANG^^}
@@ -1109,6 +1106,17 @@ internal_set_default_init_lang() {
     log_success "Default language for project initialization set to $1."
 }
 
+internal_set_default_project_mode() {
+    if [[ -z "$1" ]]; then
+        echo "Usage: $COMMAND_NAME global mode <0|1>"
+        exit 1
+    fi
+
+    ensure_valid_mode $1
+    internal_set_global_config "DEFAULT_MODE" "$1"
+    log_success "Default project mode set to $1."
+}
+
 internal_set_default_guard_manager() {
     if [ -z "$1" ]; then
         echo "Usage: $COMMAND_NAME global guard <guard_manager>"
@@ -1383,12 +1391,12 @@ cmd_new_project() {
     fi
 
     local path="."
-    local name="New Project"
-    local lang=""
-    local lang_version
-    local mode=0
-    local verbose=0
+    local name=""
+    local lang="${GLOBALS["DEFAULT_INIT_LANG"]}"
+    local mode="${GLOBALS["DEFAULT_MODE"]}"
     local guard="${GLOBALS["DEFAULT_GUARD"]}"
+    local lang_version
+    local verbose=0
 
     shift
 
@@ -1403,7 +1411,6 @@ cmd_new_project() {
         shift
     done
 
-    [ -z "$path" ] && path="."
     [[ ! "$path" =~ ^(\.|\/) ]] && path="./$path"
 
     set_project_path "$path"
@@ -1413,24 +1420,49 @@ cmd_new_project() {
         exit 1;
     fi
 
-    if [ -z "$lang" ]; then
-        if [ -z "${GLOBALS["DEFAULT_INIT_LANG"]}" ]; then
-            # ask for C or CPP project
-            read -p "Choose the project language (c/CPP): " lang
+    if [ -z "$name" ]; then
+        read -p "Choose the project name: " name
 
-            if [ -z "$lang" ]; then
-                lang="cpp"
-            fi
-
-            echo -e "\nHINT: You can set the default language for project creation with '$COMMAND_NAME global lang <c/cpp>'"
-            echo -e "      Thus, you won't be asked for the language anymore if you don't specify one.\n"
-        else
-            lang="${GLOBALS["DEFAULT_INIT_LANG"]}"
+        if [ -z "$name" ]; then
+            name="New Project"
         fi
     fi
 
-    [ -z "$guard" ] && guard="ifndef"
-    lang_version=$([[  "$lang" == "c" ]] && echo 17 || echo 20)
+    if [ -z "$lang" ]; then
+        read -p "Choose the project language (CPP/c): " lang
+
+        if [ -z "$lang" ]; then
+            lang="cpp"
+        fi
+
+        #echo -e "\nHINT: You can set the default language for project creation with '$COMMAND_NAME global lang <c/cpp>'"
+        #echo -e "      Thus, you won't be asked for the language anymore if you don't specify one.\n"
+    fi
+
+    if [ -z "$mode" ]; then
+        #echo -e "'0' means include/src folders, with separated source/headers,\n'1' means only src folder, source and headers grouped by pairs."
+        read -p "Choose the project mode (0/1): " mode
+
+        if [ -z "$mode" ]; then
+            mode="0"
+        fi
+
+        #echo -e "\nHINT: You can set the default project mode with '$COMMAND_NAME global mode <0/1>'"
+        #echo -e "      Thus, you won't be asked for the mode anymore if you don't specify one.\n"
+    fi
+
+    if [ -z "$guard" ]; then
+        read -p "Choose the guard manager (IFNDEF/pragma): " guard
+
+        if [ -z "$guard" ]; then
+            guard="ifndef"
+        fi
+
+        #echo -e "\nHINT: You can set the default guard manager with '$COMMAND_NAME global guard <guard_manager>'"
+        #echo -e "      Thus, you won't be asked for the guard manager anymore if you don't specify one.\n"
+    fi
+
+    lang_version=$([[ "$lang" == "c" ]] && echo 17 || echo 20)
 
     ensure_valid_guard "$guard"
     ensure_valid_language "$lang"
@@ -1441,11 +1473,20 @@ cmd_new_project() {
 
     internal_create_project_config "$name" $mode "$lang" $lang_version "$guard"
 
-    log_success "New project initialized !\n"
-    echo -e "You can customize your project's configuration in the $CONFIG_PATH file.\n"
-    echo    "NOTE : do not modify the project.yml directly. It is strongly recommended"
-    echo    "       to use the script's commands for that, as it can dispatch changes"
-    echo -e "       in other configurations like the cmake.\n"
+    log_success "\nNew project initialized !\n"
+
+    if [ -z ${GLOBALS["FLAG_NOT_ROOKIE_ANYMORE"]} ]; then
+        echo -e "You can customize your project's configuration in the $CONFIG_PATH file.\n"
+        echo    "NOTE : do not modify the project.yml directly. It is strongly recommended"
+        echo    "       to use the script's commands for that, as it can dispatch changes"
+        echo -e "       in other configurations like the cmake.\n"
+
+        echo    "NOTE : You can set a global configuration to avoid being asked for the project's"
+        echo    "       language, mode, and guard each time you create a project, with the command"
+        echo -e "       '$COMMAND_NAME global <key> <value>'\n"
+
+        internal_set_global_config "FLAG_NOT_ROOKIE_ANYMORE" "1"
+    fi
 
     internal_load_config
     internal_create_base_project
@@ -1873,6 +1914,7 @@ cmd_set_global_config() {
         "pm") internal_set_default_package_manager $3;;
         "lang") internal_set_default_init_lang $3;;
         "guard") internal_set_default_guard_manager $3;;
+        "mode") internal_set_default_project_mode $3;;
         *) log_error "Invalid key."; exit 1;;
     esac
 }
@@ -1905,7 +1947,7 @@ cmd_get_version() {
 # -----------------------------------------------------------
 
 # Global variables
-NF_VERSION=1.0.0
+NF_VERSION=1.0.1
 
 # Get the absolute path of the script's directory
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -1961,6 +2003,10 @@ ${CLR_LGRAY}# General${CLR_RESET}
 
 info                                    Prints some informations that could help for issues.
 global              <key> <value>       Set a global configuration preference for the script.
+                    pm <package_manager>  Set the default package manager to use to install packages.
+                    lang <c|cpp>          Set the default language for project initialization.
+                    guard <ifndef|pragma> Set the default guard manager for project initialization.
+                    mode <0|1>            Set the default project mode for project initialization.
 
 ${CLR_LGRAY}# Project management${CLR_RESET}\n
 patch                                   Patch the project's version.
