@@ -1835,9 +1835,6 @@ cmd_run() { # $@=args
 
     local exe_dir="$P_OUT_DIR/$(capitalize $X_MODE)"
 
-    echo "Moving to $exe_dir" &> $OUTPUT
-    cd "$exe_dir"
-
     echo
     local border="${CLR_DGRAY}---------------${CLR_RESET}"
     log "$border Executing $(get_colored_mode) mode $border\n\n"
@@ -1848,7 +1845,7 @@ cmd_run() { # $@=args
         exit 1
     fi
 
-    local exe="./$X_EXECUTABLE$X_PRGM_EXT"
+    local exe="$exe_dir/$X_EXECUTABLE$X_PRGM_EXT"
 
     [ "$X_SUBMODE" == "debug" ]\
         && gdb $exe\
