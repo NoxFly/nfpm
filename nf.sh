@@ -965,42 +965,56 @@ internal_update_library_include() {
     local file
 
     mkdir -p $base_inc_path
+    rm -rf "$base_inc_path/*"
 
     rsync -avq --delete --prune-empty-dirs --include="*/" --include="*.$P_HDR_EXT" --include "*.inl" --exclude="*" "$P_INC_DIR/" "$base_inc_path"
 
-    # 1st scan :
-    # update file position
+    # Move files up if folder name matches file name
     find "$base_inc_path" -type f |
     while read file; do
-        local dir="$(dirname "$file")/"
-        local nFile=$(ls $dir | wc -l)
+        local dir="$(dirname "$file")"
+        local filename="$(basename "$file")"
+        local foldername="$(basename "$dir")"
+        local name="${filename%.*}"
 
-        while [[ $nFile -eq 1 && "$dir" != "$path" ]]; do
-            local oldDir="$dir"
-            dir="${dir%*/*/}/"
-            mv "$file" "$dir"
-            rm -r "$oldDir"
-            file="${file%/*/*}/${file##*/}"
-            nFile=$(ls $dir | wc -l)
-        done
+        # Check if the folder contains only files with the same name but different extensions
+        local same_name_files_count=$(find "$dir" -maxdepth 1 -type f -name "$name.*" | wc -l)
+        local total_files_count=$(find "$dir" -maxdepth 1 -type f | wc -l)
+        local total_items_count=$(find "$dir" -maxdepth 1 | wc -l)
+
+        if [[ "$name" == "$foldername" && $same_name_files_count -eq $total_files_count && $total_items_count -eq $((total_files_count + 1)) ]]; then
+            mv "$file" "$dir/../$filename"
+
+            # find all files in $base_inc_path that include this file, and update the include path
+            # removing the folder name. The include path can have $foldername/$filename as substring
+            # but it can not start by $foldername/$filename.
+            find "$base_inc_path" -type f | while read f; do
+                sed -i -e "s|#include \"$foldername/$filename\"|#include \"$filename\"|" "$f"
+            done
+        fi
     done
 
-    # 2nd scan :
-    # update includes path
+    # Update include paths to make them relative to each others
+    base_inc_path_absolute=$(realpath "$base_inc_path")
     find "$base_inc_path" -type f |
     while read file; do
         local dep
-        cat "$file" | grep -Po '(?<=#include ")(.*\.(c|cpp|inl))(?=")' |
+        cat "$file" | grep -Po '(?<=#include ")(.*\.(c|cpp|inl|hpp))(?=")' |
         while read -r dep; do
+            [[ $dep == ./\.* ]] && continue
+            [[ $dep == ../\.* ]] && continue
+
             local location=$(find "$base_inc_path" -type f -name "$(basename "$dep")")
-            [[ $location == '' ]] && location='/'
-            local relative=$(realpath --relative-to="$file" "$location")
+            [[ $location == '' ]] && location="$base_inc_path_absolute"
+            local relative=$(realpath --relative-to="$(dirname "$file")" "$location")
             local search="#include \"$dep\""
-            local replacement="#include \"${relative#'../'}\""
+            local replacement="#include \"$relative\""
 
             sed -i -e "s|$search|$replacement|" "$file"
         done
     done
+
+    find "$base_inc_path" -type d -empty -delete
 
     log "Done."
 }
@@ -1956,7 +1970,7 @@ cmd_get_version() {
 # -----------------------------------------------------------
 
 # Global variables
-NF_VERSION=1.0.1
+NF_VERSION=1.0.2
 
 # Get the absolute path of the script's directory
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
