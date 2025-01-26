@@ -1366,6 +1366,11 @@ internal_compile() {
     log_success "Compilation succeed in $make_duration" &> $OUTPUT
     echo -e "${CLR_DGRAY}Total compilation time : $total_time${CLR_RESET}"
 
+    if [ "$X_RULE" == "shared" ]; then
+        internal_update_library_include
+        return $?
+    fi
+
     return 0
 }
 
@@ -1830,7 +1835,6 @@ cmd_run() { # $@=args
     echo -e -n "${CLR_RESET}"
 
     [ $res -ne 0 ] && exit 1
-    [ "$X_RULE" == "shared" ] && internal_update_library_include
     [ $RUN_AFTER_COMPILE -eq 0 ] && exit 0
 
     local exe_dir="$P_OUT_DIR/$(capitalize $X_MODE)"
