@@ -12,6 +12,8 @@ with a lightweight configuration and use.
 
 > The configuration file is in yml, and accepts comments.
 
+A runnable open-source project that uses `nfpm` can be tested [here (NoxEngine)](https://github.com/NoxFly/NoxEngine).
+
 ## Prerequisites
 
 For now, the use of this script only works in a Unix like environment (Linux, MacOS, MingW, Cygwin, ...).
@@ -58,6 +60,18 @@ nf new
 nf build
 # [build] + run
 nf run
+# build as shared library
+# if a main.c[pp] file is found, it ignores it during the compilation of the library.
+# it allows you to make tests easiers.
+nf run --shared
+# run a test with the project as shared library
+# the project must be compile to shared library before
+# the argument is the file name of the example to run, in the exampels/ folder
+# for instance, for running examples/foo.cpp :
+nf example foo
+# note that the example must start by "//!shared" to tell nfpm that the example is
+# executing with the project as shared library. In the future, it will be able to
+# include the project as static library, or as grouped executable.
 ```
 
 The `new` command can take parameters to customize the project directly from the beginning.
